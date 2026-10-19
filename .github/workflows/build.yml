@@ -73,7 +73,15 @@ jobs:
         run: |
           chmod +x gradlew
           set -o pipefail
-          ./gradlew build --no-daemon --stacktrace 2>&1 | tee build.log
+          # javac stops at 100 errors by default, which hides most of the port's problems.
+          cat > "$RUNNER_TEMP/allerrors.init.gradle" <<'EOF'
+          allprojects {
+              tasks.withType(JavaCompile).configureEach {
+                  options.compilerArgs += ['-Xmaxerrs', '100000', '-Xmaxwarns', '0']
+              }
+          }
+          EOF
+          ./gradlew build --no-daemon --stacktrace -I "$RUNNER_TEMP/allerrors.init.gradle" 2>&1 | tee build.log
 
       - name: Dump dependency API (class lists and signatures)
         if: always()
