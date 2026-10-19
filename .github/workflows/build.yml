@@ -1,39 +1,144 @@
-name: Build
+name: Build (NeoForge 1.21.1)
+
+# Put this file at  .github/workflows/build.yml
+# and neoforge-1.21.1.patch at the repository root of your fork.
+#
+# On every run it applies the patch (unless the tree is already ported), builds with
+# Java 21 + Gradle, and uploads the jar and the full build log. Run it manually with
+# "push_patched_branch" ticked to commit the ported source to a branch you can keep
+# fixing by hand.
 
 on:
   push:
-    branches: [ "master", "main", "1.21.1" ]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      push_patched_branch:
+        description: "Commit the patched source to the 'neoforge-1.21.1' branch"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PATCH_FILE: neoforge-1.21.1.patch
+  PORT_BRANCH: neoforge-1.21.1
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Minecraft 1.21.1 requires Java 21
+      - name: Apply NeoForge 1.21.1 patch
+        id: patch
+        run: |
+          if [ -f src/main/resources/META-INF/neoforge.mods.toml ]; then
+            echo "Tree is already ported to NeoForge - skipping patch."
+            echo "applied=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ ! -f "$PATCH_FILE" ]; then
+            echo "::error::$PATCH_FILE not found in the repository root."
+            exit 1
+          fi
+          git apply --index --whitespace=nowarn "$PATCH_FILE"
+          echo "applied=true" >> "$GITHUB_OUTPUT"
+          echo "Patch applied: $(git diff --cached --name-only | wc -l) files changed."
+
+      - name: Drop stale dev-run data
+        run: rm -rf run-data
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: "21"
 
-      # Pinned Gradle so the build works even if the old wrapper (Gradle 8.1) is still in the repo.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.10.2
 
       - name: Build
-        run: gradle build --no-daemon --stacktrace
+        id: build
+        continue-on-error: true
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew build --no-daemon --stacktrace 2>&1 | tee build.log
 
-      - name: Upload mod jar
+      - name: Summarise compile errors
+        if: always()
+        run: |
+          {
+            echo "## Build result: ${{ steps.build.outcome }}"
+            echo
+            if grep -qE "\.java:[0-9]+: error:" build.log; then
+              echo "### Errors by message (top 40)"
+              echo '```'
+              grep -E "\.java:[0-9]+: error:" build.log | sed -E 's/.*error: //' | sort | uniq -c | sort -rn | head -40
+              echo '```'
+              echo
+              echo "### Errors by file (top 40)"
+              echo '```'
+              grep -E "\.java:[0-9]+: error:" build.log | sed -E 's|.*/src/main/java/||; s/:[0-9]+: error:.*//' | sort | uniq -c | sort -rn | head -40
+              echo '```'
+              echo
+              echo "Total compile errors: $(grep -cE '\.java:[0-9]+: error:' build.log)"
+            elif grep -qE "Could not (resolve|find|GET)" build.log; then
+              echo "### Dependency resolution problem"
+              echo '```'
+              grep -E "Could not (resolve|find|GET)|> Could not" build.log | head -20
+              echo '```'
+              echo "Check the dependency versions in gradle.properties / build.gradle."
+            elif [ "${{ steps.build.outcome }}" = "success" ]; then
+              echo "Build succeeded."
+            else
+              echo "See the attached build.log."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload jar
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: penumbra_phantasm-fabric-1.21.1
-          path: |
-            build/libs/*.jar
-            !build/libs/*-sources.jar
+          name: penumbra_phantasm-neoforge-1.21.1
+          path: build/libs/*.jar
           if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      - name: Push ported source to a branch
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.push_patched_branch &&
+          steps.patch.outputs.applied == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$PORT_BRANCH"
+          git rm -q --cached "$PATCH_FILE" || true
+          rm -f "$PATCH_FILE"
+          git commit -m "Port to NeoForge 1.21.1 (automated patch)"
+          git push --force origin "$PORT_BRANCH"
+          echo "Pushed ported source to branch '$PORT_BRANCH'." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the job if the build failed
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::Gradle build failed - see the summary and build.log artifact."
+          exit 1
