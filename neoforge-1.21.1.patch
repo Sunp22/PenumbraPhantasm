@@ -1681,7 +1681,7 @@ new file mode 100644
 index 0000000..cdbb010
 --- /dev/null
 +++ b/src/main/java/destiny/penumbra_phantasm/client/render/SoulHearthArmPose.java
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,36 @@
 +package destiny.penumbra_phantasm.client.render;
 +
 +import destiny.penumbra_phantasm.server.util.ModUtil;
@@ -1712,6 +1712,9 @@ index 0000000..cdbb010
 +    private SoulHearthArmPose() {}
 +
 +    public static HumanoidModel.ArmPose get() {
++        // The proxy is only filled in when the ArmPose enum class initialises, which has not necessarily
++        // happened yet during early client-extension setup. Force it before reading the value.
++        HumanoidModel.ArmPose.values();
 +        return PROXY.getValue();
 +    }
 +}
