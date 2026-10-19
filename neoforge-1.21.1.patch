@@ -49,7 +49,7 @@ index 0000000..2f6bd07
 +    if not, move them to `SavedData`.
 +12. `run-data/` contains stale logs/configs - safe to delete.
 diff --git a/build.gradle b/build.gradle
-index 6068572..a43894a 100644
+index 6068572..8176055 100644
 --- a/build.gradle
 +++ b/build.gradle
 @@ -1,309 +1,154 @@
@@ -319,8 +319,8 @@ index 6068572..a43894a 100644
 +    implementation "software.bernie.geckolib:geckolib-neoforge-${minecraft_version}:${geckolib_version}"
  
 -    compileOnly(fg.deobf("top.theillusivec4.curios:curios-forge:${curios_version}:api"))
-+    // Player Animation Library (replaces KosmX's playerAnimator + playeranimatorapi)
-+    implementation "maven.modrinth:ha1mEyJS:${playeranim_version}"
++    // KosmX's Player Animator (modId playeranimator)
++    implementation "dev.kosmx.player-anim:player-animation-lib-forge:${playeranim_version}"
  
 -    runtimeOnly(fg.deobf("curse.maven:xaeros-world-map-317780:8042194"))
 +    // Fusion (connected textures) - TODO: pick the NeoForge 1.21.1 file id
@@ -450,7 +450,7 @@ index 6068572..a43894a 100644
 +    }
  }
 diff --git a/gradle.properties b/gradle.properties
-index 50185f7..2cfaa9b 100644
+index 50185f7..c716f8c 100644
 --- a/gradle.properties
 +++ b/gradle.properties
 @@ -1,62 +1,28 @@
@@ -473,7 +473,7 @@ index 50185f7..2cfaa9b 100644
 -## Environment Properties
 +## Dependency versions (verify these first if resolution fails)
 +geckolib_version=4.6.6
-+playeranim_version=X11AqKQb
++playeranim_version=2.0.4+1.21.1
 +jei_version=19.21.0.247
 +curios_version=9.5.1+1.21.1
  
@@ -729,19 +729,12 @@ index 485c386..4b06a92 100644
          public static void onCommonSetup(FMLCommonSetupEvent event) {
              event.enqueueWork(() -> {
 diff --git a/src/main/java/destiny/penumbra_phantasm/PlayerAnimator.java b/src/main/java/destiny/penumbra_phantasm/PlayerAnimator.java
-index f50519a..a414f15 100644
+index f50519a..11c05dd 100644
 --- a/src/main/java/destiny/penumbra_phantasm/PlayerAnimator.java
 +++ b/src/main/java/destiny/penumbra_phantasm/PlayerAnimator.java
-@@ -1,40 +1,30 @@
- package destiny.penumbra_phantasm;
- 
--import dev.kosmx.playerAnim.api.layered.IAnimation;
--import dev.kosmx.playerAnim.api.layered.ModifierLayer;
--import dev.kosmx.playerAnim.minecraftApi.PlayerAnimationFactory;
--import net.minecraft.client.player.AbstractClientPlayer;
-+import com.zigythebird.playeranim.animation.PlayerAnimationController;
-+import com.zigythebird.playeranim.api.PlayerAnimationFactory;
-+import com.zigythebird.playeranimcore.enums.PlayState;
+@@ -5,33 +5,25 @@ import dev.kosmx.playerAnim.api.layered.ModifierLayer;
+ import dev.kosmx.playerAnim.minecraftApi.PlayerAnimationFactory;
+ import net.minecraft.client.player.AbstractClientPlayer;
  import net.minecraft.resources.ResourceLocation;
 -import net.minecraftforge.eventbus.api.SubscribeEvent;
 -import net.minecraftforge.fml.common.Mod;
@@ -753,7 +746,7 @@ index f50519a..a414f15 100644
  import static destiny.penumbra_phantasm.PenumbraPhantasm.MODID;
  
 -@Mod.EventBusSubscriber(modid = MODID, bus = Mod.EventBusSubscriber.Bus.MOD)
-+@EventBusSubscriber(modid = MODID, bus = EventBusSubscriber.Bus.MOD)
++@EventBusSubscriber(modid = MODID, bus = EventBusSubscriber.Bus.MOD, value = net.neoforged.api.distmarker.Dist.CLIENT)
  public class PlayerAnimator {
 +    private static final String[] LAYERS = {
 +            "fountain_make", "fountain_make_jump", "fountain_make_stab", "fountain_make_cancel",
@@ -778,19 +771,13 @@ index f50519a..a414f15 100644
 -
 -        PlayerAnimationFactory.ANIMATION_DATA_FACTORY.registerFactory(ResourceLocation.tryBuild(MODID, "soul_rip"), 1500,
 -                PlayerAnimator::registerPlayerAnimation);
--    }
--
--    private static IAnimation registerPlayerAnimation(AbstractClientPlayer player) {
--        return new ModifierLayer<>();
-+        //PAL requires layers to be registered inside enqueueWork on NeoForge
-+        event.enqueueWork(() -> {
-+            for (String layer : LAYERS) {
-+                PlayerAnimationFactory.ANIMATION_DATA_FACTORY.registerFactory(ResourceLocation.fromNamespaceAndPath(MODID, layer), 1500,
-+                        player -> new PlayerAnimationController(player, (controller, state, animSetter) -> PlayState.STOP));
-+            }
-+        });
++        for (String layer : LAYERS) {
++            PlayerAnimationFactory.ANIMATION_DATA_FACTORY.registerFactory(
++                    ResourceLocation.fromNamespaceAndPath(MODID, layer), 1500, PlayerAnimator::registerPlayerAnimation);
++        }
      }
- }
+ 
+     private static IAnimation registerPlayerAnimation(AbstractClientPlayer player) {
 diff --git a/src/main/java/destiny/penumbra_phantasm/ServerConfig.java b/src/main/java/destiny/penumbra_phantasm/ServerConfig.java
 index 9b53552..9e4aed5 100644
 --- a/src/main/java/destiny/penumbra_phantasm/ServerConfig.java
@@ -1155,7 +1142,7 @@ index 196bb4e..de04540 100644
  import java.util.function.Supplier;
  
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundPacketHandler.java b/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundPacketHandler.java
-index 2cc02e4..30dc8c0 100644
+index 2cc02e4..a7d4b5b 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundPacketHandler.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundPacketHandler.java
 @@ -1,5 +1,6 @@
@@ -1165,21 +1152,7 @@ index 2cc02e4..30dc8c0 100644
  import destiny.penumbra_phantasm.client.render.screen.DEVICE_INTRO_SCREEN;
  import destiny.penumbra_phantasm.client.render.textbox.DarkWorldDialogue;
  import destiny.penumbra_phantasm.client.render.textbox.TextBoxConstants;
-@@ -18,11 +19,8 @@ import destiny.penumbra_phantasm.server.registry.CapabilityRegistry;
- import destiny.penumbra_phantasm.server.registry.PacketHandlerRegistry;
- import destiny.penumbra_phantasm.server.registry.SoundRegistry;
- import destiny.penumbra_phantasm.server.util.DarkWorldUtil;
--import dev.kosmx.playerAnim.api.layered.IAnimation;
--import dev.kosmx.playerAnim.api.layered.KeyframeAnimationPlayer;
--import dev.kosmx.playerAnim.api.layered.ModifierLayer;
--import dev.kosmx.playerAnim.minecraftApi.PlayerAnimationAccess;
--import dev.kosmx.playerAnim.minecraftApi.PlayerAnimationRegistry;
-+import com.zigythebird.playeranim.animation.PlayerAnimationController;
-+import com.zigythebird.playeranim.api.PlayerAnimationAccess;
- import net.minecraft.client.Minecraft;
- import net.minecraft.client.player.AbstractClientPlayer;
- import net.minecraft.client.player.LocalPlayer;
-@@ -38,8 +36,8 @@ import net.minecraft.world.entity.Entity;
+@@ -38,8 +39,8 @@ import net.minecraft.world.entity.Entity;
  import net.minecraft.world.entity.player.Player;
  import net.minecraft.world.level.Level;
  import net.minecraft.world.phys.Vec3;
@@ -1190,7 +1163,7 @@ index 2cc02e4..30dc8c0 100644
  
  import java.util.List;
  import java.util.Map;
-@@ -82,7 +80,7 @@ public class ClientBoundPacketHandler
+@@ -82,7 +83,7 @@ public class ClientBoundPacketHandler
  		Player player = minecraft.player;
  
  		if(player != null)
@@ -1199,7 +1172,7 @@ index 2cc02e4..30dc8c0 100644
  				{
  					cap.diedWithSoulHearth = diedWithSoulHearth;
  					cap.soulType = soulType;
-@@ -94,7 +92,7 @@ public class ClientBoundPacketHandler
+@@ -94,7 +95,7 @@ public class ClientBoundPacketHandler
  		Player player = minecraft.player;
  
  		if(player != null) {
@@ -1208,7 +1181,7 @@ index 2cc02e4..30dc8c0 100644
  				cap.seenIntro = seenIntro;
  				cap.diedWithSoulHearth = diedWithSoulHearth;
  				cap.soulType = soulType;
-@@ -218,7 +216,7 @@ public class ClientBoundPacketHandler
+@@ -218,7 +219,7 @@ public class ClientBoundPacketHandler
  		Level level = player.level();
  
  		SoulCapability soulCapability = null;
@@ -1217,7 +1190,7 @@ index 2cc02e4..30dc8c0 100644
  		if(soulCapabilityLazy.isPresent() && soulCapabilityLazy.resolve().isPresent())
  			soulCapability = soulCapabilityLazy.resolve().get();
  
-@@ -227,7 +225,7 @@ public class ClientBoundPacketHandler
+@@ -227,7 +228,7 @@ public class ClientBoundPacketHandler
  		}
  
  		DarkFountainCapability darkFountainCapability = null;
@@ -1226,7 +1199,7 @@ index 2cc02e4..30dc8c0 100644
  		if(darkLazyCapability.isPresent() && darkLazyCapability.resolve().isPresent())
  			darkFountainCapability = darkLazyCapability.resolve().get();
  
-@@ -272,7 +270,7 @@ public class ClientBoundPacketHandler
+@@ -272,7 +273,7 @@ public class ClientBoundPacketHandler
  
  		if (level == null) return;
  
@@ -1235,50 +1208,18 @@ index 2cc02e4..30dc8c0 100644
  
  		if (!(type instanceof SimpleParticleType simpleType)) return;
  
-@@ -281,7 +279,6 @@ public class ClientBoundPacketHandler
- 		}
- 	}
+@@ -294,7 +295,10 @@ public class ClientBoundPacketHandler
+ 				.get(animationId);
  
--	@SuppressWarnings("unchecked")
- 	public static void playPlayerAnimation(int entityId, ResourceLocation animationId) {
- 		Level level = Minecraft.getInstance().level;
- 		if (level == null) return;
-@@ -289,16 +286,13 @@ public class ClientBoundPacketHandler
- 		Entity entity = level.getEntity(entityId);
- 		if (!(entity instanceof AbstractClientPlayer player)) return;
- 
--		ModifierLayer<IAnimation> animation = (ModifierLayer<IAnimation>) PlayerAnimationAccess
--				.getPlayerAssociatedData(player)
--				.get(animationId);
-+		PlayerAnimationController controller = (PlayerAnimationController) PlayerAnimationAccess.getPlayerAnimationLayer(player, animationId);
- 
--		if (animation != null) {
+ 		if (animation != null) {
 -			animation.setAnimation(new KeyframeAnimationPlayer(PlayerAnimationRegistry.getAnimation(animationId)));
-+		if (controller != null) {
-+			controller.triggerAnimation(animationId);
++			var anim = PlayerAnimationRegistry.getAnimation(animationId);
++			if (anim != null) {
++				animation.setAnimation(new KeyframeAnimationPlayer(anim));
++			}
  		}
  	}
  
--	@SuppressWarnings("unchecked")
- 	public static void cancelPlayerAnimation(int entityId, ResourceLocation animationId) {
- 		Level level = Minecraft.getInstance().level;
- 		if (level == null) return;
-@@ -306,12 +300,10 @@ public class ClientBoundPacketHandler
- 		Entity entity = level.getEntity(entityId);
- 		if (!(entity instanceof AbstractClientPlayer player)) return;
- 
--		ModifierLayer<IAnimation> animation = (ModifierLayer<IAnimation>) PlayerAnimationAccess
--				.getPlayerAssociatedData(player)
--				.get(animationId);
-+		PlayerAnimationController controller = (PlayerAnimationController) PlayerAnimationAccess.getPlayerAnimationLayer(player, animationId);
- 
--		if (animation != null) {
--			animation.setAnimation(null);
-+		if (controller != null) {
-+			controller.stop();
- 		}
- 	}
- }
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundParticlePacket.java b/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundParticlePacket.java
 index 734b229..fd39e9c 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundParticlePacket.java
@@ -14816,7 +14757,7 @@ index 3f559de..0000000
 \ No newline at end of file
 diff --git a/src/main/resources/META-INF/neoforge.mods.toml b/src/main/resources/META-INF/neoforge.mods.toml
 new file mode 100644
-index 0000000..adb979d
+index 0000000..7be9d72
 --- /dev/null
 +++ b/src/main/resources/META-INF/neoforge.mods.toml
 @@ -0,0 +1,64 @@
@@ -14865,9 +14806,9 @@ index 0000000..adb979d
 +side = "BOTH"
 +
 +[[dependencies.${mod_id}]]
-+modId = "playeranim"
++modId = "playeranimator"
 +type = "required"
-+versionRange = "[1.1,)"
++versionRange = "[2.0,)"
 +ordering = "NONE"
 +side = "BOTH"
 +
