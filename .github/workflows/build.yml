@@ -56,7 +56,11 @@ jobs:
           echo "Patch applied: $(git diff --cached --name-only | wc -l) files changed."
 
       - name: Drop stale dev-run data
-        run: rm -rf run-data
+        run: |
+          rm -rf run-data
+          # The restored Gradle cache can contain old ForgeGradle 1.20.1 artifacts (some corrupt),
+          # which pollute the API dump below.
+          rm -rf "$HOME/.gradle/caches/forge_gradle"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -87,7 +91,7 @@ jobs:
         if: always()
         run: |
           mkdir -p api-dump
-          find "$HOME/.gradle" "$PWD/.gradle" build -name '*.jar' ! -name '*-sources.jar' 2>/dev/null > api-dump/jars.txt || true
+          find "$HOME/.gradle" "$PWD/.gradle" build -name '*.jar' ! -name '*-sources.jar' 2>/dev/null | grep -v -e forge_gradle -e '1\.20\.1' > api-dump/jars.txt || true
           CP=$(paste -sd: api-dump/jars.txt)
           for key in ha1mEyJS geckolib curios; do
             for j in $(grep -i "$key" api-dump/jars.txt); do
