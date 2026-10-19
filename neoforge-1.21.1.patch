@@ -320,7 +320,7 @@ index 6068572..4184a6f 100644
  
 -    compileOnly(fg.deobf("top.theillusivec4.curios:curios-forge:${curios_version}:api"))
 +    // Player Animation Library (replaces KosmX's playerAnimator + playeranimatorapi)
-+    implementation "maven.modrinth:player-animation-library:${playeranim_version}"
++    implementation "maven.modrinth:ha1mEyJS:${playeranim_version}"
  
 -    runtimeOnly(fg.deobf("curse.maven:xaeros-world-map-317780:8042194"))
 +    // Fusion (connected textures) - TODO: pick the NeoForge 1.21.1 file id
@@ -471,9 +471,9 @@ index 50185f7..7752637 100644
 -## Environment Properties
 +## Dependency versions (verify these first if resolution fails)
 +geckolib_version=4.6.6
-+playeranim_version=1.1.4+1.21.1-NeoForge
++playeranim_version=X11AqKQb
 +jei_version=19.21.0.247
-+curios_version=9.0.0+1.21.1
++curios_version=9.5.1+1.21.1
  
 -# The Minecraft version must agree with the Forge version to get a valid artifact
 -minecraft_version=1.20.1
