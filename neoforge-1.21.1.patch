@@ -6386,8 +6386,8 @@ index ea7027f..b801715 100644
 -	@Redirect(method = "quickMoveStack", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Mob;getEquipmentSlotForItem(Lnet/minecraft/world/item/ItemStack;)Lnet/minecraft/world/entity/EquipmentSlot;"))
 -	public EquipmentSlot penumbraPhantasm$quickMoveStack(ItemStack stack) {
 -		EquipmentSlot slot = Mob.getEquipmentSlotForItem(stack);
-+	@Redirect(method = "quickMoveStack", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;getEquipmentSlotForItem(Lnet/minecraft/world/item/ItemStack;)Lnet/minecraft/world/entity/EquipmentSlot;"))
-+	public EquipmentSlot penumbraPhantasm$quickMoveStack(net.minecraft.world.entity.LivingEntity entity, ItemStack stack) {
++	@Redirect(method = "quickMoveStack", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;getEquipmentSlotForItem(Lnet/minecraft/world/item/ItemStack;)Lnet/minecraft/world/entity/EquipmentSlot;"))
++	public EquipmentSlot penumbraPhantasm$quickMoveStack(Player entity, ItemStack stack) {
 +		EquipmentSlot slot = entity.getEquipmentSlotForItem(stack);
  
 -		if (DarkWorldUtil.isDarkWorld(this.owner.level()) && slot.getType() == EquipmentSlot.Type.ARMOR) {
