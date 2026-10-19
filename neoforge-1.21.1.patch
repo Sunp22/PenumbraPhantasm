@@ -49,10 +49,10 @@ index 0000000..2f6bd07
 +    if not, move them to `SavedData`.
 +12. `run-data/` contains stale logs/configs - safe to delete.
 diff --git a/build.gradle b/build.gradle
-index 6068572..4184a6f 100644
+index 6068572..a43894a 100644
 --- a/build.gradle
 +++ b/build.gradle
-@@ -1,309 +1,152 @@
+@@ -1,309 +1,154 @@
 -buildscript {
 -    repositories {
 -        maven { url 'https://maven.minecraftforge.net' }
@@ -437,6 +437,8 @@ index 6068572..4184a6f 100644
 -    }
 +tasks.withType(JavaCompile).configureEach {
 +    options.encoding = 'UTF-8'
++    // report every error per CI run instead of javac's default cap of 100
++    options.compilerArgs += ['-Xmaxerrs', '5000']
  }
  
 -tasks.withType(JavaCompile).configureEach {
@@ -448,7 +450,7 @@ index 6068572..4184a6f 100644
 +    }
  }
 diff --git a/gradle.properties b/gradle.properties
-index 50185f7..7752637 100644
+index 50185f7..2cfaa9b 100644
 --- a/gradle.properties
 +++ b/gradle.properties
 @@ -1,62 +1,28 @@
@@ -571,7 +573,7 @@ index 49c91a4..20b1a9d 100644
 +
 +rootProject.name = 'penumbra_phantasm'
 diff --git a/src/main/java/destiny/penumbra_phantasm/PenumbraPhantasm.java b/src/main/java/destiny/penumbra_phantasm/PenumbraPhantasm.java
-index 485c386..cbc3faf 100644
+index 485c386..e88bc15 100644
 --- a/src/main/java/destiny/penumbra_phantasm/PenumbraPhantasm.java
 +++ b/src/main/java/destiny/penumbra_phantasm/PenumbraPhantasm.java
 @@ -32,23 +32,23 @@ import net.minecraft.client.particle.FlameParticle;
@@ -628,18 +630,23 @@ index 485c386..cbc3faf 100644
  
          SoundRegistry.SOUNDS.register(modEventBus);
          EntityRegistry.ENTITY_TYPES.register(modEventBus);
-@@ -85,6 +84,8 @@ public class PenumbraPhantasm {
+@@ -85,7 +84,9 @@ public class PenumbraPhantasm {
          MenuRegistry.MENUS.register(modEventBus);
          ChunkGeneratorRegistry.CHUNK_GENERATORS.register(modEventBus);
          PacketHandlerRegistry.register();
+-        AdvancementRegistry.register();
 +        modEventBus.addListener(PacketHandlerRegistry.INSTANCE::registerPayloads);
 +        CapabilityRegistry.ATTACHMENTS.register(modEventBus);
-         AdvancementRegistry.register();
++        AdvancementRegistry.register(modEventBus);
  
          modEventBus.addListener((DataPackRegistryEvent.NewRegistry event) -> {
-@@ -96,10 +97,10 @@ public class PenumbraPhantasm {
+             event.dataPackRegistry(DarkWorldType.REGISTRY_KEY, DarkWorldType.CODEC, null);
+@@ -94,12 +95,12 @@ public class PenumbraPhantasm {
+             event.dataPackRegistry(DarkWorldRecipeSeparation.REGISTRY_KEY, DarkWorldRecipeSeparation.CODEC, DarkWorldRecipeSeparation.CODEC);
+             event.dataPackRegistry(BiomeMusicType.REGISTRY_KEY, BiomeMusicType.CODEC, BiomeMusicType.CODEC);
          });
-         modEventBus.addListener(PenumbraPhantasm::commonSetup);
+-        modEventBus.addListener(PenumbraPhantasm::commonSetup);
++        modEventBus.addListener((FMLCommonSetupEvent event) -> event.enqueueWork(() -> StorageManager.init(modEventBus)));
  
 -        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, ServerConfig.SPEC);
 -        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
@@ -651,16 +658,42 @@ index 485c386..cbc3faf 100644
  
          ModList.get().getModContainerById("fusion").ifPresent(container -> {
                      try {
-@@ -116,7 +117,7 @@ public class PenumbraPhantasm {
-         event.enqueueWork(StorageManager::init);
+@@ -111,12 +112,8 @@ public class PenumbraPhantasm {
+         );
      }
+ 
+-    public static void commonSetup(FMLCommonSetupEvent event)
+-    {
+-        event.enqueueWork(StorageManager::init);
+-    }
  
 -    @Mod.EventBusSubscriber(modid = MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 +    @EventBusSubscriber(modid = MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
      public static class ClientModEvents {
          @SubscribeEvent
          public static void onItemColors(RegisterColorHandlersEvent.Item event) {
-@@ -189,14 +190,14 @@ public class PenumbraPhantasm {
+@@ -151,13 +148,13 @@ public class PenumbraPhantasm {
+         }
+ 
+         @SubscribeEvent
+-        public static void registerOverlays(RegisterGuiOverlaysEvent event) {
+-            event.registerAboveAll("fountain_darkness", FountainDarknessOverlay.OVERLAY);
+-            event.registerAboveAll("darkness_land", DarknessLandOverlay.OVERLAY);
+-            event.registerAboveAll("location_title", LocationTitleOverlay.OVERLAY);
+-            event.registerAboveAll("depths_entry", DepthsEntryOverlay.OVERLAY);
+-            event.registerAboveAll("determination_bar", DeterminationBarOverlay.OVERLAY);
+-            event.registerAboveAll("swoon", SwoonOverlay.OVERLAY);
++        public static void registerOverlays(RegisterGuiLayersEvent event) {
++            event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(MODID, "fountain_darkness"), FountainDarknessOverlay.OVERLAY.asLayer());
++            event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(MODID, "darkness_land"), DarknessLandOverlay.OVERLAY.asLayer());
++            event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(MODID, "location_title"), LocationTitleOverlay.OVERLAY.asLayer());
++            event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(MODID, "depths_entry"), DepthsEntryOverlay.OVERLAY.asLayer());
++            event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(MODID, "determination_bar"), DeterminationBarOverlay.OVERLAY.asLayer());
++            event.registerAboveAll(ResourceLocation.fromNamespaceAndPath(MODID, "swoon"), SwoonOverlay.OVERLAY.asLayer());
+         }
+ 
+         @SubscribeEvent
+@@ -189,14 +186,14 @@ public class PenumbraPhantasm {
  
                  EntityRenderers.register(EntityRegistry.SEALING_SOUL.get(), SealingSoulEntityRenderer::new);
  
@@ -877,10 +910,10 @@ index a993a16..c9f919f 100644
  
  public final class KeyBindings {
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/light/SoulHearthLightEvents.java b/src/main/java/destiny/penumbra_phantasm/client/light/SoulHearthLightEvents.java
-index 090f165..918886d 100644
+index 090f165..8dda503 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/light/SoulHearthLightEvents.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/light/SoulHearthLightEvents.java
-@@ -5,14 +5,15 @@ import net.minecraft.client.multiplayer.ClientLevel;
+@@ -5,18 +5,18 @@ import net.minecraft.client.multiplayer.ClientLevel;
  import net.minecraft.world.entity.player.Player;
  import net.minecraft.world.level.Level;
  import net.minecraft.world.level.chunk.LevelChunk;
@@ -894,7 +927,7 @@ index 090f165..918886d 100644
 -@Mod.EventBusSubscriber(bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 +import net.neoforged.api.distmarker.Dist;
 +import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
-+import net.neoforged.neoforge.event.TickEvent;
++import net.neoforged.neoforge.client.event.ClientTickEvent;
 +import net.neoforged.neoforge.event.level.ChunkEvent;
 +import net.neoforged.bus.api.SubscribeEvent;
 +import net.neoforged.fml.common.Mod;
@@ -903,7 +936,12 @@ index 090f165..918886d 100644
 +@EventBusSubscriber(bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
  public class SoulHearthLightEvents {
      @SubscribeEvent
-     public static void onClientTick(TickEvent.ClientTickEvent event) {
+-    public static void onClientTick(TickEvent.ClientTickEvent event) {
+-        if (event.phase != TickEvent.Phase.END) return;
++    public static void onClientTick(ClientTickEvent.Post event) {
+ 
+         Minecraft minecraft = Minecraft.getInstance();
+ 
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundAbilityPacket.java b/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundAbilityPacket.java
 index 5bb24c0..07d1bc5 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundAbilityPacket.java
@@ -1924,7 +1962,7 @@ index 9e033ed..b62c90e 100644
  
  	public DeltashieldModel(ModelPart root) {
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DarknessLandOverlay.java b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DarknessLandOverlay.java
-index d197eda..b67be57 100644
+index d197eda..4d1f2ba 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DarknessLandOverlay.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DarknessLandOverlay.java
 @@ -1,5 +1,6 @@
@@ -1940,7 +1978,7 @@ index d197eda..b67be57 100644
  import net.minecraft.resources.ResourceLocation;
 -import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 -import net.minecraftforge.common.util.LazyOptional;
-+import net.neoforged.neoforge.client.gui.overlay.IGuiOverlay;
++import destiny.penumbra_phantasm.compat.legacy.IGuiOverlay;
 +import destiny.penumbra_phantasm.compat.legacy.LazyOptional;
  
  public class DarknessLandOverlay {
@@ -1959,7 +1997,7 @@ index d197eda..b67be57 100644
              cap = lazyCapability.resolve().get();
          else return;
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DepthsEntryOverlay.java b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DepthsEntryOverlay.java
-index f26932a..a6cd57b 100644
+index f26932a..2effd4a 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DepthsEntryOverlay.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DepthsEntryOverlay.java
 @@ -1,13 +1,14 @@
@@ -1974,7 +2012,7 @@ index f26932a..a6cd57b 100644
  import net.minecraft.client.player.LocalPlayer;
 -import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 -import net.minecraftforge.common.util.LazyOptional;
-+import net.neoforged.neoforge.client.gui.overlay.IGuiOverlay;
++import destiny.penumbra_phantasm.compat.legacy.IGuiOverlay;
 +import destiny.penumbra_phantasm.compat.legacy.LazyOptional;
  
  public class DepthsEntryOverlay {
@@ -1989,7 +2027,7 @@ index f26932a..a6cd57b 100644
              cap = lazyCapability.resolve().get();
          else return;
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DeterminationBarOverlay.java b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DeterminationBarOverlay.java
-index e63f467..ea4d5dc 100644
+index e63f467..6381497 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DeterminationBarOverlay.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/DeterminationBarOverlay.java
 @@ -1,5 +1,6 @@
@@ -2005,7 +2043,7 @@ index e63f467..ea4d5dc 100644
  import net.minecraft.world.level.Level;
 -import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 -import net.minecraftforge.common.util.LazyOptional;
-+import net.neoforged.neoforge.client.gui.overlay.IGuiOverlay;
++import destiny.penumbra_phantasm.compat.legacy.IGuiOverlay;
 +import destiny.penumbra_phantasm.compat.legacy.LazyOptional;
  
  public class DeterminationBarOverlay {
@@ -2037,7 +2075,7 @@ index e63f467..ea4d5dc 100644
              soulCap = lazySoulCap.resolve().get();
          else return; // If capability isn't present
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/FountainDarknessOverlay.java b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/FountainDarknessOverlay.java
-index 4239953..bd5d182 100644
+index 4239953..f8bc0f8 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/FountainDarknessOverlay.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/FountainDarknessOverlay.java
 @@ -2,10 +2,10 @@ package destiny.penumbra_phantasm.client.render.overlay;
@@ -2045,7 +2083,7 @@ index 4239953..bd5d182 100644
  import destiny.penumbra_phantasm.PenumbraPhantasm;
  import net.minecraft.resources.ResourceLocation;
 -import net.minecraftforge.client.gui.overlay.IGuiOverlay;
-+import net.neoforged.neoforge.client.gui.overlay.IGuiOverlay;
++import destiny.penumbra_phantasm.compat.legacy.IGuiOverlay;
  
  public class FountainDarknessOverlay {
 -    public static final ResourceLocation DARKNESS = new ResourceLocation(PenumbraPhantasm.MODID, "textures/misc/fountain_darkness_old.png");
@@ -2054,7 +2092,7 @@ index 4239953..bd5d182 100644
      public static final IGuiOverlay OVERLAY = ((gui, guiGraphics, partialTick, width, height) -> {});
  }
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/LocationTitleOverlay.java b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/LocationTitleOverlay.java
-index 3fd9518..41e0b0b 100644
+index 3fd9518..be6e844 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/LocationTitleOverlay.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/LocationTitleOverlay.java
 @@ -1,5 +1,6 @@
@@ -2070,7 +2108,7 @@ index 3fd9518..41e0b0b 100644
  import net.minecraft.world.level.Level;
 -import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 -import net.minecraftforge.common.util.LazyOptional;
-+import net.neoforged.neoforge.client.gui.overlay.IGuiOverlay;
++import destiny.penumbra_phantasm.compat.legacy.IGuiOverlay;
 +import destiny.penumbra_phantasm.compat.legacy.LazyOptional;
  
  public class LocationTitleOverlay {
@@ -2103,7 +2141,7 @@ index 3fd9518..41e0b0b 100644
          int color = 0xFFFFFF;
          if (currentLocation.equals(fountainTranslatable))
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/SwoonOverlay.java b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/SwoonOverlay.java
-index cc5a0a1..8f530f8 100644
+index cc5a0a1..e953f69 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/SwoonOverlay.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/SwoonOverlay.java
 @@ -1,11 +1,12 @@
@@ -2116,7 +2154,7 @@ index cc5a0a1..8f530f8 100644
  import net.minecraft.client.Minecraft;
  import net.minecraft.client.player.LocalPlayer;
 -import net.minecraftforge.client.gui.overlay.IGuiOverlay;
-+import net.neoforged.neoforge.client.gui.overlay.IGuiOverlay;
++import destiny.penumbra_phantasm.compat.legacy.IGuiOverlay;
  
  public class SwoonOverlay {
      public static int lastTick = -1;
@@ -2130,7 +2168,7 @@ index cc5a0a1..8f530f8 100644
          if (screenCap == null) return;
  
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/TextBoxOverlay.java b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/TextBoxOverlay.java
-index 0c972ce..6ba602e 100644
+index 0c972ce..6bb345f 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/render/overlay/TextBoxOverlay.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/render/overlay/TextBoxOverlay.java
 @@ -1,5 +1,6 @@
@@ -2145,7 +2183,7 @@ index 0c972ce..6ba602e 100644
  import net.minecraft.util.Mth;
  import net.minecraft.world.level.Level;
 -import net.minecraftforge.client.gui.overlay.IGuiOverlay;
-+import net.neoforged.neoforge.client.gui.overlay.IGuiOverlay;
++import destiny.penumbra_phantasm.compat.legacy.IGuiOverlay;
  
  import java.util.List;
  
@@ -2980,6 +3018,42 @@ index 2c5304c..4c26cc8 100644
      }
  
      private static void refreshFountainAmbients(DarkFountainCapability cap) {
+diff --git a/src/main/java/destiny/penumbra_phantasm/compat/InfiniverseCompat.java b/src/main/java/destiny/penumbra_phantasm/compat/InfiniverseCompat.java
+new file mode 100644
+index 0000000..e0722f4
+--- /dev/null
++++ b/src/main/java/destiny/penumbra_phantasm/compat/InfiniverseCompat.java
+@@ -0,0 +1,30 @@
++package destiny.penumbra_phantasm.compat;
++
++import net.minecraft.core.registries.Registries;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.server.MinecraftServer;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.dimension.LevelStem;
++
++import java.lang.reflect.Method;
++import java.util.function.Supplier;
++
++/**
++ * Reflection wrapper around Infiniverse so the mod compiles without it on the classpath.
++ * Infiniverse must be installed at runtime for dark worlds to be created.
++ */
++public final class InfiniverseCompat {
++    private InfiniverseCompat() {}
++
++    public static ServerLevel getOrCreateLevel(MinecraftServer server, ResourceKey<Level> key, Supplier<LevelStem> stem) {
++        try {
++            Class<?> apiClass = Class.forName("commoble.infiniverse.api.InfiniverseAPI");
++            Object api = apiClass.getMethod("get").invoke(null);
++            Method method = apiClass.getMethod("getOrCreateLevel", MinecraftServer.class, ResourceKey.class, Supplier.class);
++            return (ServerLevel) method.invoke(api, server, key, stem);
++        } catch (ReflectiveOperationException e) {
++            throw new IllegalStateException("Infiniverse is required to create dark worlds", e);
++        }
++    }
++}
 diff --git a/src/main/java/destiny/penumbra_phantasm/compat/legacy/Capability.java b/src/main/java/destiny/penumbra_phantasm/compat/legacy/Capability.java
 new file mode 100644
 index 0000000..34b6882
@@ -3003,6 +3077,34 @@ index 0000000..34b6882
 +
 +    public T get(IAttachmentHolder holder) {
 +        return holder.getData(type);
++    }
++}
+diff --git a/src/main/java/destiny/penumbra_phantasm/compat/legacy/IGuiOverlay.java b/src/main/java/destiny/penumbra_phantasm/compat/legacy/IGuiOverlay.java
+new file mode 100644
+index 0000000..22156a4
+--- /dev/null
++++ b/src/main/java/destiny/penumbra_phantasm/compat/legacy/IGuiOverlay.java
+@@ -0,0 +1,22 @@
++package destiny.penumbra_phantasm.compat.legacy;
++
++import net.minecraft.client.DeltaTracker;
++import net.minecraft.client.Minecraft;
++import net.minecraft.client.gui.Gui;
++import net.minecraft.client.gui.GuiGraphics;
++import net.minecraft.client.gui.LayeredDraw;
++
++/**
++ * Shim for the removed Forge IGuiOverlay. Keeps the old lambda shape and adapts it to a 1.21 gui layer.
++ */
++@FunctionalInterface
++public interface IGuiOverlay {
++    void render(Gui gui, GuiGraphics guiGraphics, float partialTick, int width, int height);
++
++    default LayeredDraw.Layer asLayer() {
++        return (guiGraphics, deltaTracker) -> {
++            Minecraft mc = Minecraft.getInstance();
++            render(mc.gui, guiGraphics, deltaTracker.getGameTimeDeltaPartialTick(false), guiGraphics.guiWidth(), guiGraphics.guiHeight());
++        };
 +    }
 +}
 diff --git a/src/main/java/destiny/penumbra_phantasm/compat/legacy/LazyOptional.java b/src/main/java/destiny/penumbra_phantasm/compat/legacy/LazyOptional.java
@@ -3508,24 +3610,124 @@ index ffd1e12..f42e2d2 100644
  
  				ci.cancel();
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/advancement/ChangedDimensionContainsTrigger.java b/src/main/java/destiny/penumbra_phantasm/server/advancement/ChangedDimensionContainsTrigger.java
-index 56a312e..a8f67d4 100644
+index 56a312e..0a8a4c2 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/advancement/ChangedDimensionContainsTrigger.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/advancement/ChangedDimensionContainsTrigger.java
-@@ -17,7 +17,7 @@ import com.google.gson.JsonObject;
+@@ -1,83 +1,48 @@
+ package destiny.penumbra_phantasm.server.advancement;
+ 
+-import com.google.gson.JsonSyntaxException;
+-import destiny.penumbra_phantasm.PenumbraPhantasm;
+-import javax.annotation.Nullable;
+-import net.minecraft.advancements.critereon.AbstractCriterionTriggerInstance;
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
+ import net.minecraft.advancements.critereon.ContextAwarePredicate;
+-import net.minecraft.advancements.critereon.DeserializationContext;
+-import net.minecraft.advancements.critereon.SerializationContext;
++import net.minecraft.advancements.critereon.EntityPredicate;
+ import net.minecraft.advancements.critereon.SimpleCriterionTrigger;
+ import net.minecraft.resources.ResourceKey;
+-import net.minecraft.resources.ResourceLocation;
+ import net.minecraft.server.level.ServerPlayer;
+-import net.minecraft.util.GsonHelper;
+ import net.minecraft.world.level.Level;
+-import com.google.gson.JsonObject;
++
++import java.util.Optional;
  
  public class ChangedDimensionContainsTrigger extends SimpleCriterionTrigger<ChangedDimensionContainsTrigger.TriggerInstance> {
      public static final ChangedDimensionContainsTrigger INSTANCE = new ChangedDimensionContainsTrigger();
 -    public static final ResourceLocation ID = new ResourceLocation(PenumbraPhantasm.MODID, "changed_dimension_contains");
-+    public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath(PenumbraPhantasm.MODID, "changed_dimension_contains");
  
      private ChangedDimensionContainsTrigger() {}
  
+     @Override
+-    public ResourceLocation getId() {
+-        return ID;
+-    }
+-
+-    @Override
+-    public TriggerInstance createInstance(JsonObject json, ContextAwarePredicate playerPredicate, DeserializationContext context) {
+-        @Nullable String fromFragment = json.has("from_dimension_contains") ? GsonHelper.getAsString(json, "from_dimension_contains") : null;
+-        @Nullable String toFragment = json.has("to_dimension_contains") ? GsonHelper.getAsString(json, "to_dimension_contains") : null;
+-        if (fromFragment != null && fromFragment.isBlank()) {
+-            fromFragment = null;
+-        }
+-        if (toFragment != null && toFragment.isBlank()) {
+-            toFragment = null;
+-        }
+-        if (fromFragment == null && toFragment == null) {
+-            throw new JsonSyntaxException("changed_dimension_contains needs from_dimension_contains and/or to_dimension_contains");
+-        }
+-        return new TriggerInstance(playerPredicate, fromFragment, toFragment);
++    public Codec<TriggerInstance> codec() {
++        return TriggerInstance.CODEC;
+     }
+ 
+     public void trigger(ServerPlayer player, ResourceKey<Level> from, ResourceKey<Level> to) {
+         this.trigger(player, instance -> instance.matches(from, to));
+     }
+ 
+-    public static class TriggerInstance extends AbstractCriterionTriggerInstance {
+-        @Nullable
+-        private final String fromDimensionContains;
+-        @Nullable
+-        private final String toDimensionContains;
+-
+-        public TriggerInstance(ContextAwarePredicate player, @Nullable String fromDimensionIdContains, @Nullable String toDimensionIdContains) {
+-            super(ID, player);
+-            this.fromDimensionContains = fromDimensionIdContains;
+-            this.toDimensionContains = toDimensionIdContains;
+-        }
++    public record TriggerInstance(Optional<ContextAwarePredicate> player, Optional<String> fromDimensionContains,
++                                  Optional<String> toDimensionContains) implements SimpleCriterionTrigger.SimpleInstance {
++        public static final Codec<TriggerInstance> CODEC = RecordCodecBuilder.create(instance -> instance.group(
++                EntityPredicate.ADVANCEMENT_CODEC.optionalFieldOf("player").forGetter(TriggerInstance::player),
++                Codec.STRING.optionalFieldOf("from_dimension_contains").forGetter(TriggerInstance::fromDimensionContains),
++                Codec.STRING.optionalFieldOf("to_dimension_contains").forGetter(TriggerInstance::toDimensionContains)
++        ).apply(instance, TriggerInstance::new));
+ 
+         public boolean matches(ResourceKey<Level> from, ResourceKey<Level> to) {
+-            if (fromDimensionContains != null && !from.location().toString().contains(fromDimensionContains)) {
++            if (fromDimensionContains.isPresent() && !fromDimensionContains.get().isBlank()
++                    && !from.location().toString().contains(fromDimensionContains.get())) {
+                 return false;
+             }
+-            if (toDimensionContains != null && !to.location().toString().contains(toDimensionContains)) {
++            if (toDimensionContains.isPresent() && !toDimensionContains.get().isBlank()
++                    && !to.location().toString().contains(toDimensionContains.get())) {
+                 return false;
+             }
+             return true;
+         }
+-
+-        @Override
+-        public JsonObject serializeToJson(SerializationContext conditions) {
+-            JsonObject json = super.serializeToJson(conditions);
+-            if (fromDimensionContains != null) {
+-                json.addProperty("from_dimension_contains", fromDimensionContains);
+-            }
+-            if (toDimensionContains != null) {
+-                json.addProperty("to_dimension_contains", toDimensionContains);
+-            }
+-            return json;
+-        }
+     }
+ }
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/advancement/TriggerCriterions.java b/src/main/java/destiny/penumbra_phantasm/server/advancement/TriggerCriterions.java
-index abce8ee..13c26eb 100644
+index abce8ee..51f3123 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/advancement/TriggerCriterions.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/advancement/TriggerCriterions.java
-@@ -5,12 +5,12 @@ import net.minecraft.advancements.critereon.PlayerTrigger;
- import net.minecraft.resources.ResourceLocation;
+@@ -1,16 +1,30 @@
+ package destiny.penumbra_phantasm.server.advancement;
+ 
+ import destiny.penumbra_phantasm.PenumbraPhantasm;
++import net.minecraft.advancements.CriterionTrigger;
+ import net.minecraft.advancements.critereon.PlayerTrigger;
+-import net.minecraft.resources.ResourceLocation;
++import net.minecraft.core.registries.Registries;
++import net.neoforged.neoforge.registries.DeferredRegister;
  
  public class TriggerCriterions {
 -    public static final PlayerTrigger DARK_FOUNTAIN_MAKE = new PlayerTrigger(new ResourceLocation(PenumbraPhantasm.MODID, "dark_fountain_make"));
@@ -3536,16 +3738,29 @@ index abce8ee..13c26eb 100644
 -    public static final PlayerTrigger DETERMINATION_INJECTION_CAUSE_OVERDOSE = new PlayerTrigger(new ResourceLocation(PenumbraPhantasm.MODID, "determination_injection_cause_overdose"));
 -    public static final PlayerTrigger DETERMINATION_INJECTION_STEAL = new PlayerTrigger(new ResourceLocation(PenumbraPhantasm.MODID, "determination_injection_steal"));
 -    public static final PlayerTrigger SOUL_HEARTH = new PlayerTrigger(new ResourceLocation(PenumbraPhantasm.MODID, "soul_hearth"));
-+    public static final PlayerTrigger DARK_FOUNTAIN_MAKE = new PlayerTrigger(ResourceLocation.fromNamespaceAndPath(PenumbraPhantasm.MODID, "dark_fountain_make"));
-+    public static final PlayerTrigger DARK_FOUNTAIN_SEAL = new PlayerTrigger(ResourceLocation.fromNamespaceAndPath(PenumbraPhantasm.MODID, "dark_fountain_seal"));
-+    public static final PlayerTrigger DETERMINATION_INJECTION = new PlayerTrigger(ResourceLocation.fromNamespaceAndPath(PenumbraPhantasm.MODID, "determination_injection"));
-+    public static final PlayerTrigger DETERMINATION_INJECTION_DEATH = new PlayerTrigger(ResourceLocation.fromNamespaceAndPath(PenumbraPhantasm.MODID, "determination_injection_death"));
-+    public static final PlayerTrigger DETERMINATION_INJECTION_OVERDOSE = new PlayerTrigger(ResourceLocation.fromNamespaceAndPath(PenumbraPhantasm.MODID, "determination_injection_overdose"));
-+    public static final PlayerTrigger DETERMINATION_INJECTION_CAUSE_OVERDOSE = new PlayerTrigger(ResourceLocation.fromNamespaceAndPath(PenumbraPhantasm.MODID, "determination_injection_cause_overdose"));
-+    public static final PlayerTrigger DETERMINATION_INJECTION_STEAL = new PlayerTrigger(ResourceLocation.fromNamespaceAndPath(PenumbraPhantasm.MODID, "determination_injection_steal"));
-+    public static final PlayerTrigger SOUL_HEARTH = new PlayerTrigger(ResourceLocation.fromNamespaceAndPath(PenumbraPhantasm.MODID, "soul_hearth"));
- }
+-}
 \ No newline at end of file
++    public static final DeferredRegister<CriterionTrigger<?>> TRIGGERS = DeferredRegister.create(Registries.TRIGGER_TYPE, PenumbraPhantasm.MODID);
++
++    public static final PlayerTrigger DARK_FOUNTAIN_MAKE = player("dark_fountain_make");
++    public static final PlayerTrigger DARK_FOUNTAIN_SEAL = player("dark_fountain_seal");
++    public static final PlayerTrigger DETERMINATION_INJECTION = player("determination_injection");
++    public static final PlayerTrigger DETERMINATION_INJECTION_DEATH = player("determination_injection_death");
++    public static final PlayerTrigger DETERMINATION_INJECTION_OVERDOSE = player("determination_injection_overdose");
++    public static final PlayerTrigger DETERMINATION_INJECTION_CAUSE_OVERDOSE = player("determination_injection_cause_overdose");
++    public static final PlayerTrigger DETERMINATION_INJECTION_STEAL = player("determination_injection_steal");
++    public static final PlayerTrigger SOUL_HEARTH = player("soul_hearth");
++
++    static {
++        TRIGGERS.register("changed_dimension_contains", () -> ChangedDimensionContainsTrigger.INSTANCE);
++    }
++
++    private static PlayerTrigger player(String name) {
++        PlayerTrigger trigger = new PlayerTrigger();
++        TRIGGERS.register(name, () -> trigger);
++        return trigger;
++    }
++}
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/block/CheshireChestBlock.java b/src/main/java/destiny/penumbra_phantasm/server/block/CheshireChestBlock.java
 index ada4739..57c1236 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/block/CheshireChestBlock.java
@@ -3592,6 +3807,45 @@ index ada4739..57c1236 100644
          });
  
          BlockEntity be = level.getBlockEntity(pos);
+diff --git a/src/main/java/destiny/penumbra_phantasm/server/block/DarkWorldSaplingBlock.java b/src/main/java/destiny/penumbra_phantasm/server/block/DarkWorldSaplingBlock.java
+index 29014fa..6363520 100644
+--- a/src/main/java/destiny/penumbra_phantasm/server/block/DarkWorldSaplingBlock.java
++++ b/src/main/java/destiny/penumbra_phantasm/server/block/DarkWorldSaplingBlock.java
+@@ -4,11 +4,11 @@ import net.minecraft.core.BlockPos;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.util.RandomSource;
+ import net.minecraft.world.level.block.SaplingBlock;
+-import net.minecraft.world.level.block.grower.AbstractTreeGrower;
++import net.minecraft.world.level.block.grower.TreeGrower;
+ import net.minecraft.world.level.block.state.BlockState;
+ 
+ public class DarkWorldSaplingBlock extends SaplingBlock {
+-    public DarkWorldSaplingBlock(AbstractTreeGrower pTreeGrower, Properties pProperties) {
++    public DarkWorldSaplingBlock(TreeGrower pTreeGrower, Properties pProperties) {
+         super(pTreeGrower, pProperties);
+     }
+ 
+diff --git a/src/main/java/destiny/penumbra_phantasm/server/block/DarknessBlock.java b/src/main/java/destiny/penumbra_phantasm/server/block/DarknessBlock.java
+index f461084..b5370c4 100644
+--- a/src/main/java/destiny/penumbra_phantasm/server/block/DarknessBlock.java
++++ b/src/main/java/destiny/penumbra_phantasm/server/block/DarknessBlock.java
+@@ -8,6 +8,7 @@ import net.minecraft.core.Direction;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.util.RandomSource;
+ import net.minecraft.world.entity.EntityType;
++import net.minecraft.world.entity.SpawnPlacementType;
+ import net.minecraft.world.entity.SpawnPlacements;
+ import net.minecraft.world.item.context.BlockPlaceContext;
+ import net.minecraft.world.level.BlockGetter;
+@@ -95,7 +96,7 @@ public class DarknessBlock extends BaseEntityBlock {
+     }
+ 
+     @Override
+-    public boolean isValidSpawn(BlockState state, BlockGetter level, BlockPos pos, SpawnPlacements.Type type, EntityType<?> entityType) {
++    public boolean isValidSpawn(BlockState state, BlockGetter level, BlockPos pos, SpawnPlacementType type, EntityType<?> entityType) {
+         return false;
+     }
+ 
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/block/FireDoorBlock.java b/src/main/java/destiny/penumbra_phantasm/server/block/FireDoorBlock.java
 index b5e6608..d61c114 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/block/FireDoorBlock.java
@@ -3630,6 +3884,21 @@ index b5e6608..d61c114 100644
              if (pState.getValue(HALF) == DoubleBlockHalf.UPPER) {
                  cap.removeFireDoor(pLevel.dimension(), pPos.below());
              } else {
+diff --git a/src/main/java/destiny/penumbra_phantasm/server/block/GenericPressurePlateBlock.java b/src/main/java/destiny/penumbra_phantasm/server/block/GenericPressurePlateBlock.java
+index 481ecd9..cddea34 100644
+--- a/src/main/java/destiny/penumbra_phantasm/server/block/GenericPressurePlateBlock.java
++++ b/src/main/java/destiny/penumbra_phantasm/server/block/GenericPressurePlateBlock.java
+@@ -19,8 +19,8 @@ public class GenericPressurePlateBlock extends PressurePlateBlock {
+     public final SoundEvent pressSound;
+     public final SoundEvent unpressSound;
+ 
+-    public GenericPressurePlateBlock(Sensitivity pSensitivity, Properties pProperties, SoundType soundType, SoundEvent pressSound, SoundEvent unpressSound) {
+-        super(pSensitivity, pProperties, new BlockSetType("generic_pressure_plate", true, soundType, SoundEvents.WOODEN_DOOR_CLOSE, SoundEvents.WOODEN_DOOR_OPEN, SoundEvents.WOODEN_TRAPDOOR_CLOSE, SoundEvents.WOODEN_TRAPDOOR_OPEN, SoundEvents.STONE_PRESSURE_PLATE_CLICK_OFF, SoundEvents.STONE_PRESSURE_PLATE_CLICK_ON, SoundEvents.STONE_BUTTON_CLICK_OFF, SoundEvents.STONE_BUTTON_CLICK_ON));
++    public GenericPressurePlateBlock(Properties pProperties, SoundType soundType, SoundEvent pressSound, SoundEvent unpressSound) {
++        super(new BlockSetType("generic_pressure_plate", true, true, true, BlockSetType.PressurePlateSensitivity.EVERYTHING, soundType, SoundEvents.WOODEN_DOOR_CLOSE, SoundEvents.WOODEN_DOOR_OPEN, SoundEvents.WOODEN_TRAPDOOR_CLOSE, SoundEvents.WOODEN_TRAPDOOR_OPEN, SoundEvents.STONE_PRESSURE_PLATE_CLICK_OFF, SoundEvents.STONE_PRESSURE_PLATE_CLICK_ON, SoundEvents.STONE_BUTTON_CLICK_OFF, SoundEvents.STONE_BUTTON_CLICK_ON), pProperties);
+         this.pressSound = pressSound;
+         this.unpressSound = unpressSound;
+     }
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/block/HearthBlock.java b/src/main/java/destiny/penumbra_phantasm/server/block/HearthBlock.java
 index 4a56e3b..d799c5d 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/block/HearthBlock.java
@@ -3664,7 +3933,7 @@ index 4a56e3b..d799c5d 100644
              }
  
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/block/RotatedPillarWoodBlock.java b/src/main/java/destiny/penumbra_phantasm/server/block/RotatedPillarWoodBlock.java
-index f281860..44fb93f 100644
+index f281860..b44e1cb 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/block/RotatedPillarWoodBlock.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/block/RotatedPillarWoodBlock.java
 @@ -5,7 +5,7 @@ import net.minecraft.world.item.AxeItem;
@@ -3672,10 +3941,27 @@ index f281860..44fb93f 100644
  import net.minecraft.world.level.block.RotatedPillarBlock;
  import net.minecraft.world.level.block.state.BlockState;
 -import net.minecraftforge.common.ToolAction;
-+import net.neoforged.neoforge.common.ToolAction;
++import net.neoforged.neoforge.common.ItemAbility;
  import org.jetbrains.annotations.Nullable;
  
  public class RotatedPillarWoodBlock extends RotatedPillarBlock {
+@@ -14,7 +14,7 @@ public class RotatedPillarWoodBlock extends RotatedPillarBlock {
+     }
+ 
+     @Override
+-    public @Nullable BlockState getToolModifiedState(BlockState state, UseOnContext context, ToolAction toolAction, boolean simulate) {
++    public @Nullable BlockState getToolModifiedState(BlockState state, UseOnContext context, ItemAbility itemAbility, boolean simulate) {
+         if(context.getItemInHand().getItem() instanceof AxeItem) {
+             if(state.is(BlockRegistry.SCARLET_LOG.get())) {
+                 return BlockRegistry.STRIPPED_SCARLET_LOG.get().defaultBlockState().setValue(AXIS, state.getValue(AXIS));
+@@ -31,6 +31,6 @@ public class RotatedPillarWoodBlock extends RotatedPillarBlock {
+             }
+         }
+ 
+-        return super.getToolModifiedState(state, context, toolAction, simulate);
++        return super.getToolModifiedState(state, context, itemAbility, simulate);
+     }
+ }
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/block/entity/DarknessBlockEntity.java b/src/main/java/destiny/penumbra_phantasm/server/block/entity/DarknessBlockEntity.java
 index a6f08f0..93849a9 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/block/entity/DarknessBlockEntity.java
@@ -4520,7 +4806,7 @@ index b0057c8..e763faa 100644
                      if (player instanceof ServerPlayer serverPlayer) {
                          cap.syncToClient(serverPlayer);
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/event/ClientEvents.java b/src/main/java/destiny/penumbra_phantasm/server/event/ClientEvents.java
-index 35682e8..77d7396 100644
+index 35682e8..77e6454 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/event/ClientEvents.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/event/ClientEvents.java
 @@ -1,5 +1,6 @@
@@ -4530,7 +4816,7 @@ index 35682e8..77d7396 100644
  import com.mojang.blaze3d.platform.GlStateManager;
  import com.mojang.blaze3d.platform.InputConstants;
  import com.mojang.blaze3d.platform.Window;
-@@ -52,10 +53,10 @@ import net.minecraft.world.level.material.FluidState;
+@@ -52,10 +53,9 @@ import net.minecraft.world.level.material.FluidState;
  import net.minecraft.world.phys.BlockHitResult;
  import net.minecraft.world.phys.EntityHitResult;
  import net.minecraft.world.phys.HitResult;
@@ -4539,13 +4825,12 @@ index 35682e8..77d7396 100644
 -import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 -import net.minecraftforge.event.level.LevelEvent;
 +import net.neoforged.neoforge.client.event.*;
-+import net.neoforged.neoforge.client.gui.overlay.NamedGuiOverlay;
-+import net.neoforged.neoforge.client.gui.overlay.VanillaGuiOverlay;
++import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 +import net.neoforged.neoforge.event.level.LevelEvent;
  import org.lwjgl.opengl.GL11;
  import destiny.penumbra_phantasm.PenumbraPhantasm;
  import destiny.penumbra_phantasm.client.render.fountain.FountainRenderUtil;
-@@ -77,27 +78,28 @@ import net.minecraft.resources.ResourceKey;
+@@ -77,27 +77,29 @@ import net.minecraft.resources.ResourceKey;
  import net.minecraft.resources.ResourceLocation;
  import net.minecraft.world.level.ChunkPos;
  import net.minecraft.world.phys.Vec2;
@@ -4558,7 +4843,8 @@ index 35682e8..77d7396 100644
 -import net.minecraftforge.fml.common.Mod;
 +import net.neoforged.api.distmarker.Dist;
 +import destiny.penumbra_phantasm.compat.legacy.LazyOptional;
-+import net.neoforged.neoforge.event.TickEvent;
++import net.neoforged.neoforge.client.event.ClientTickEvent;
++import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
 +import net.neoforged.neoforge.event.level.ChunkEvent;
 +import net.neoforged.bus.api.EventPriority;
 +import net.neoforged.bus.api.SubscribeEvent;
@@ -4613,6 +4899,17 @@ index 35682e8..77d7396 100644
  				for(GreatDoor greatDoor : new ArrayList<>(cap.greatDoors.values())) {
  					pose.pushPose();
  					pose.translate((double) greatDoor.greatDoorPos.getX() - camera.getPosition().x(),
+@@ -380,8 +382,8 @@ public class ClientEvents {
+ 	}
+ 
+ 	@SubscribeEvent
+-	public static void clientTick(TickEvent.ClientTickEvent event) {
+-		if(event.phase == TickEvent.Phase.END) {
++	public static void clientTick(ClientTickEvent.Post event) {
++		{
+ 			DEVICE_INTRO_SCREEN.tickWorldThumbnail(Minecraft.getInstance());
+ 			MusicManager.getInstance().tick();
+ 			Minecraft minecraft = Minecraft.getInstance();
 @@ -436,7 +438,7 @@ public class ClientEvents {
  
  			//Stop swirls from swirling if paused
@@ -4631,7 +4928,75 @@ index 35682e8..77d7396 100644
  			if(lazyCapability.isPresent() && lazyCapability.resolve().isPresent()) {
  				cap = lazyCapability.resolve().get();
  			} else return;
-@@ -653,7 +655,7 @@ public class ClientEvents {
+@@ -498,9 +500,8 @@ public class ClientEvents {
+ 	@SubscribeEvent
+ 	public static void pressKey(InputEvent.Key event) {
+ 		if(DarkWorldDialogue.isActive()) {
+-			if(DarkWorldDialogue.handleKey(event.getKey(), event.getAction()) && event.isCancelable()) {
+-				event.setCanceled(true);
+-			}
++			//InputEvent.Key is no longer cancellable in NeoForge 1.21
++			DarkWorldDialogue.handleKey(event.getKey(), event.getAction());
+ 			return;
+ 		}
+ 
+@@ -510,10 +511,6 @@ public class ClientEvents {
+ 				&& CardKingdomEggRoomUtil.isEggRoom(minecraft.player.level())) {
+ 			PacketHandlerRegistry.INSTANCE.sendToServer(new ServerBoundEggRoomInteractPacket());
+ 
+-			if(event.isCancelable()) {
+-				event.setCanceled(true);
+-			}
+-
+ 			return;
+ 		}
+ 
+@@ -617,48 +614,48 @@ public class ClientEvents {
+ 	}
+ 
+ 	@SubscribeEvent
+-	public static void onOverlayPre(RenderGuiOverlayEvent.Pre event) {
++	public static void onOverlayPre(RenderGuiLayerEvent.Pre event) {
+ 		Minecraft mc = Minecraft.getInstance();
+ 
+ 		if(mc.level == null || mc.player == null) return;
+ 		if(!DarkWorldUtil.isDarkWorld(mc.level)) return;
+ 
+ 		Player player = mc.player;
+-		NamedGuiOverlay overlay = event.getOverlay();
++		ResourceLocation overlay = event.getName();
+ 		GuiGraphics gui = event.getGuiGraphics();
+-		Window window = event.getWindow();
++		Window window = mc.getWindow();
+ 
+ 		int screenWidth = window.getGuiScaledWidth();
+ 		int screenHeight = window.getGuiScaledHeight();
+ 
+-		if(overlay == VanillaGuiOverlay.FOOD_LEVEL.type()) {
++		if(overlay.equals(VanillaGuiLayers.FOOD_LEVEL)) {
+ 			event.setCanceled(true);
+ 		}
+-		if(overlay == VanillaGuiOverlay.ARMOR_LEVEL.type()) {
++		if(overlay.equals(VanillaGuiLayers.ARMOR_LEVEL)) {
+ 			event.setCanceled(true);
+ 		}
+-		if(overlay == VanillaGuiOverlay.MOUNT_HEALTH.type()) {
++		if(overlay.equals(VanillaGuiLayers.VEHICLE_HEALTH)) {
+ 			event.setCanceled(true);
+ 		}
+-		if(overlay == VanillaGuiOverlay.AIR_LEVEL.type()) {
++		if(overlay.equals(VanillaGuiLayers.AIR_LEVEL)) {
+ 			event.setCanceled(true);
+ 		}
+ 
+-		if(overlay == VanillaGuiOverlay.CROSSHAIR.type()) {
++		if(overlay.equals(VanillaGuiLayers.CROSSHAIR)) {
+ 			event.setCanceled(true);
+ 			renderDarkWorldCrosshair(gui, window, mc);
+-		} else if(overlay == VanillaGuiOverlay.PLAYER_HEALTH.type()) {
++		} else if(overlay.equals(VanillaGuiLayers.PLAYER_HEALTH)) {
+ 			if(DarkWorldDialogue.isActive()) {
+ 				event.setCanceled(true);
  				return;
  			}
  
@@ -4640,7 +5005,22 @@ index 35682e8..77d7396 100644
  			int soulType = soulCap.soulType;
  
  			event.setCanceled(true);
-@@ -842,7 +844,7 @@ public class ClientEvents {
+ 			renderDarkWorldHealth(mc, gui, window, mc.player, soulType);
+-		} else if(overlay == VanillaGuiOverlay.HOTBAR.type()) {
++		} else if(overlay.equals(VanillaGuiLayers.HOTBAR)) {
+ 			if(DarkWorldDialogue.isActive()) {
+ 				event.setCanceled(true);
+ 				return;
+@@ -666,7 +663,7 @@ public class ClientEvents {
+ 
+ 			event.setCanceled(true);
+ 			renderDarkWorldHotbar(mc, gui, window, mc.player);
+-		} else if(overlay == VanillaGuiOverlay.EXPERIENCE_BAR.type()) {
++		} else if(overlay.equals(VanillaGuiLayers.EXPERIENCE_BAR)) {
+ 			if(DarkWorldDialogue.isActive()) {
+ 				event.setCanceled(true);
+ 				return;
+@@ -842,7 +839,7 @@ public class ClientEvents {
  
  		if(!mc.gameMode.canHurtPlayer()) return;
  
@@ -4650,7 +5030,7 @@ index 35682e8..77d7396 100644
  		int screenHeight = window.getGuiScaledHeight();
  		int currentHealth = Mth.ceil(player.getHealth());
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/event/CommonEvents.java b/src/main/java/destiny/penumbra_phantasm/server/event/CommonEvents.java
-index 019dbec..a79adff 100644
+index 019dbec..e89b627 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/event/CommonEvents.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/event/CommonEvents.java
 @@ -1,5 +1,6 @@
@@ -4660,7 +5040,7 @@ index 019dbec..a79adff 100644
  import destiny.penumbra_phantasm.ServerConfig;
  import destiny.penumbra_phantasm.client.network.ClientBoundSoulBreakPacket;
  import destiny.penumbra_phantasm.client.render.dimension.DepthsSkyLightning;
-@@ -30,14 +31,14 @@ import net.minecraft.world.item.ItemStack;
+@@ -30,14 +31,15 @@ import net.minecraft.world.item.ItemStack;
  import net.minecraft.world.level.ChunkPos;
  import net.minecraft.world.level.Level;
  import net.minecraft.world.level.chunk.ChunkAccess;
@@ -4672,7 +5052,8 @@ index 019dbec..a79adff 100644
 -import net.minecraftforge.event.level.ChunkEvent;
 -import net.minecraftforge.eventbus.api.SubscribeEvent;
 -import net.minecraftforge.network.PacketDistributor;
-+import net.neoforged.neoforge.event.TickEvent;
++import net.neoforged.neoforge.event.tick.LevelTickEvent;
++import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 +import net.neoforged.neoforge.event.entity.EntityTravelToDimensionEvent;
 +import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 +import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
@@ -4683,7 +5064,7 @@ index 019dbec..a79adff 100644
  
  import java.util.*;
  
-@@ -107,7 +108,7 @@ public class CommonEvents {
+@@ -107,7 +109,7 @@ public class CommonEvents {
      }
  
      @SubscribeEvent
@@ -4692,7 +5073,19 @@ index 019dbec..a79adff 100644
          Level level = event.getEntity().level();
          Entity attacker = event.getSource().getEntity();
          LivingEntity target = event.getEntity();
-@@ -164,7 +165,7 @@ public class CommonEvents {
+@@ -155,16 +157,16 @@ public class CommonEvents {
+     }
+ 
+     @SubscribeEvent
+-    public void levelTick(TickEvent.LevelTickEvent event) {
+-        if (event.phase == TickEvent.Phase.END) {
+-            Level level = event.level;
++    public void levelTick(LevelTickEvent.Post event) {
++        {
++            Level level = event.getLevel();
+             if (level.isClientSide) return;
+ 
+             if (level instanceof ServerLevel serverLevel && DarkWorldUtil.isDarkWorld(serverLevel)) {
                  drainGreatDoorSpawnerChunkQueue(serverLevel);
              }
  
@@ -4701,7 +5094,7 @@ index 019dbec..a79adff 100644
                  for (DarkFountain fountain : new ArrayList<>(cap.darkFountains.values())) {
                      fountain.tick(level);
                  }
-@@ -174,7 +175,7 @@ public class CommonEvents {
+@@ -174,7 +176,7 @@ public class CommonEvents {
                  DepthsSkyLightning.tick(serverLevel);
                  CardKingdomEggRoomManager.tickPendingDoors(serverLevel);
  
@@ -4710,7 +5103,7 @@ index 019dbec..a79adff 100644
                      for (GreatDoor greatDoor : new ArrayList<>(cap.greatDoors.values())) {
                          ChunkPos doorChunk = new ChunkPos(greatDoor.greatDoorPos);
  
-@@ -192,7 +193,7 @@ public class CommonEvents {
+@@ -192,7 +194,7 @@ public class CommonEvents {
          LivingEntity living = event.getEntity();
  
          if(living instanceof ServerPlayer serverPlayer) {
@@ -4719,7 +5112,7 @@ index 019dbec..a79adff 100644
  				cap.diedWithSoulHearth = SoulCapability.hasOwnSoulHearth(serverPlayer);
  
                  PacketHandlerRegistry.INSTANCE.send(PacketDistributor.PLAYER.with(() -> serverPlayer),
-@@ -206,25 +207,21 @@ public class CommonEvents {
+@@ -206,25 +208,21 @@ public class CommonEvents {
          Player original = event.getOriginal();
          Player player = event.getEntity();
  
@@ -4753,7 +5146,7 @@ index 019dbec..a79adff 100644
          if(event.getEntity() instanceof ServerPlayer serverPlayer) {
              Level level = serverPlayer.level();
              ResourceKey<Level> sourceDim = original.level().dimension();
-@@ -296,7 +293,7 @@ public class CommonEvents {
+@@ -296,7 +294,7 @@ public class CommonEvents {
              }
  
              if (ServerConfig.skipIntroScreen) {
@@ -4762,23 +5155,27 @@ index 019dbec..a79adff 100644
                      if (!cap.seenIntro) {
                          cap.soulType = serverPlayer.level().random.nextInt(7) + 1;
                          cap.seenIntro = true;
-@@ -323,10 +320,10 @@ public class CommonEvents {
+@@ -321,12 +319,12 @@ public class CommonEvents {
+     }
+ 
      @SubscribeEvent
-     public void playerTick(TickEvent.PlayerTickEvent event) {
-         if(event.phase == TickEvent.Phase.END && event.side.isServer() && event.player instanceof ServerPlayer player) {
+-    public void playerTick(TickEvent.PlayerTickEvent event) {
+-        if(event.phase == TickEvent.Phase.END && event.side.isServer() && event.player instanceof ServerPlayer player) {
 -            event.player.getCapability(CapabilityRegistry.SOUL).ifPresent(cap -> cap.tick(event.player.level(), player));
 -            event.player.getCapability(CapabilityRegistry.VERTICAL_BAR).ifPresent(cap -> cap.tick(event.player.level(), player));
 -            event.player.getCapability(CapabilityRegistry.ABILITY).ifPresent(cap -> cap.tick(event.player.level(), player));
 -            event.player.getCapability(CapabilityRegistry.SCREEN_ANIMATION).ifPresent(cap -> cap.tick(event.player.level(), player));
-+            LegacyCaps.get(event.player, CapabilityRegistry.SOUL).ifPresent(cap -> cap.tick(event.player.level(), player));
-+            LegacyCaps.get(event.player, CapabilityRegistry.VERTICAL_BAR).ifPresent(cap -> cap.tick(event.player.level(), player));
-+            LegacyCaps.get(event.player, CapabilityRegistry.ABILITY).ifPresent(cap -> cap.tick(event.player.level(), player));
-+            LegacyCaps.get(event.player, CapabilityRegistry.SCREEN_ANIMATION).ifPresent(cap -> cap.tick(event.player.level(), player));
++    public void playerTick(PlayerTickEvent.Post event) {
++        if(event.getEntity() instanceof ServerPlayer player) {
++            LegacyCaps.get(event.getEntity(), CapabilityRegistry.SOUL).ifPresent(cap -> cap.tick(event.getEntity().level(), player));
++            LegacyCaps.get(event.getEntity(), CapabilityRegistry.VERTICAL_BAR).ifPresent(cap -> cap.tick(event.getEntity().level(), player));
++            LegacyCaps.get(event.getEntity(), CapabilityRegistry.ABILITY).ifPresent(cap -> cap.tick(event.getEntity().level(), player));
++            LegacyCaps.get(event.getEntity(), CapabilityRegistry.SCREEN_ANIMATION).ifPresent(cap -> cap.tick(event.getEntity().level(), player));
              bootPlayerFromDarkWorldsWithoutFountain(player);
              CardKingdomEggRoomManager.tickPlayer(player);
          }
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/event/ForgeEvents.java b/src/main/java/destiny/penumbra_phantasm/server/event/ForgeEvents.java
-index 2aca82b..d9be819 100644
+index 2aca82b..a00da4c 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/event/ForgeEvents.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/event/ForgeEvents.java
 @@ -1,12 +1,12 @@
@@ -4795,7 +5192,7 @@ index 2aca82b..d9be819 100644
  import destiny.penumbra_phantasm.server.egg_room.CardKingdomEggRoomUtil;
  import destiny.penumbra_phantasm.server.util.DarkWorldUtil;
  import destiny.penumbra_phantasm.server.item.EggItem;
-@@ -30,51 +30,26 @@ import net.minecraft.world.level.material.FluidState;
+@@ -30,59 +30,44 @@ import net.minecraft.world.level.material.FluidState;
  import net.minecraft.world.level.material.Fluids;
  import net.minecraft.world.phys.AABB;
  import net.minecraft.world.phys.Vec3;
@@ -4819,7 +5216,10 @@ index 2aca82b..d9be819 100644
 +import net.neoforged.neoforge.event.entity.living.LivingFallEvent;
 +import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
 +import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
-+import net.neoforged.neoforge.event.entity.player.FillBucketEvent;
++import net.neoforged.neoforge.event.tick.EntityTickEvent;
++import net.minecraft.world.InteractionResult;
++import net.minecraft.world.phys.BlockHitResult;
++import net.minecraft.world.phys.HitResult;
 +import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 +import net.neoforged.neoforge.event.level.BlockEvent;
 +import net.neoforged.bus.api.SubscribeEvent;
@@ -4834,7 +5234,8 @@ index 2aca82b..d9be819 100644
 -@Mod.EventBusSubscriber(modid = PenumbraPhantasm.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 +@EventBusSubscriber(modid = PenumbraPhantasm.MODID, bus = EventBusSubscriber.Bus.GAME)
  public class ForgeEvents {
--    @SubscribeEvent
++    //FillBucketEvent no longer exists in NeoForge 1.21, so empty buckets are checked on right click instead
+     @SubscribeEvent
 -    public static void attachWorldCapabilities(AttachCapabilitiesEvent<Level> event) {
 -        event.addCapability(ResourceLocation.tryBuild(PenumbraPhantasm.MODID, "dark_fountains"), new GenericProvider<>(CapabilityRegistry.DARK_FOUNTAIN,
 -                new DarkFountainCapability()));
@@ -4859,10 +5260,35 @@ index 2aca82b..d9be819 100644
 -        }
 -    }
 -
-     @SubscribeEvent
-     public static void onFillBucket(FillBucketEvent event) {
-         ItemStack bucketStack = event.getEmptyBucket();
-@@ -105,7 +80,7 @@ public class ForgeEvents {
+-    @SubscribeEvent
+-    public static void onFillBucket(FillBucketEvent event) {
+-        ItemStack bucketStack = event.getEmptyBucket();
++    public static void onFillBucket(PlayerInteractEvent.RightClickItem event) {
++        ItemStack bucketStack = event.getItemStack();
+ 
+         if (!(bucketStack.getItem() instanceof BucketItem bucketItem) || bucketItem.getFluid() != Fluids.EMPTY) return;
+ 
++        Player player = event.getEntity();
+         Level level = event.getLevel();
+-        Vec3 clickVec = event.getTarget().getLocation();
++
++        HitResult hit = player.pick(player.blockInteractionRange(), 1.0F, true);
++
++        if (!(hit instanceof BlockHitResult blockHit) || hit.getType() != HitResult.Type.BLOCK) return;
++
++        Vec3 clickVec = blockHit.getLocation();
+         BlockPos clickPos = BlockPos.containing(clickVec.x, clickVec.y, clickVec.z);
+         BlockState clickState = level.getBlockState(clickPos);
+         FluidState clickFluid = clickState.getFluidState();
+@@ -94,6 +79,7 @@ public class ForgeEvents {
+ 
+         if ((isCustomFluid && !isScarletBucket) || (!isCustomFluid && isScarletBucket)) {
+             event.setCanceled(true);
++            event.setCancellationResult(InteractionResult.FAIL);
+         }
+     }
+ 
+@@ -105,7 +91,7 @@ public class ForgeEvents {
  
          if (!DarkWorldUtil.isDepths(player.level())) return;
  
@@ -4871,7 +5297,7 @@ index 2aca82b..d9be819 100644
              int determination = cap.determination;
  
              if (determination <= 0) {
-@@ -206,7 +181,7 @@ public class ForgeEvents {
+@@ -206,7 +192,7 @@ public class ForgeEvents {
      }
  
      public static void attackWithBlackKnife(Level level, Player attacker, Entity target, ItemStack weaponStack) {
@@ -4880,7 +5306,7 @@ index 2aca82b..d9be819 100644
  
          if (abilityCap == null) return;
          if (abilityCap.hasDelayTicker(target.getUUID(), weaponStack)) return;
-@@ -215,7 +190,7 @@ public class ForgeEvents {
+@@ -215,7 +201,7 @@ public class ForgeEvents {
  
          AABB playerBox = new AABB(attacker.blockPosition()).inflate(16);
          for (ServerPlayer serverPlayer : level.getEntitiesOfClass(ServerPlayer.class, playerBox)) {
@@ -4889,7 +5315,7 @@ index 2aca82b..d9be819 100644
  
              if (screenCap == null) continue;
  
-@@ -224,7 +199,7 @@ public class ForgeEvents {
+@@ -224,7 +210,7 @@ public class ForgeEvents {
      }
  
      public static void attackWithRealKnife(Player attacker, Entity target, ItemStack weaponStack) {
@@ -4898,7 +5324,7 @@ index 2aca82b..d9be819 100644
  
          if (abilityCap == null) return;
          if (abilityCap.hasDelayTicker(target.getUUID(), weaponStack)) return;
-@@ -240,7 +215,7 @@ public class ForgeEvents {
+@@ -240,7 +226,7 @@ public class ForgeEvents {
          PacketHandlerRegistry.INSTANCE.send(
                  PacketDistributor.NEAR.with(() -> new PacketDistributor.TargetPoint(target.getX(), target.getY(), target.getZ(),
                          32, target.level().dimension())),
@@ -4907,7 +5333,20 @@ index 2aca82b..d9be819 100644
                          particleVec.x, particleVec.y, particleVec.z, 0, 0, 0, 1)
          );
      }
-@@ -277,7 +252,7 @@ public class ForgeEvents {
+@@ -267,17 +253,17 @@ public class ForgeEvents {
+ 
+     //If player is swooning, prevent mob targeting
+     @SubscribeEvent
+-    public void livingChangeTarget(LivingChangeTargetEvent event) {
+-        Entity newTarget = event.getNewTarget();
++    public static void livingChangeTarget(LivingChangeTargetEvent event) {
++        Entity newTarget = event.getNewAboutToBeSetTarget();
+ 
+         if (newTarget == null) return;
+ 
+-        Entity potentialPlayer = event.getOriginalTarget();
++        Entity potentialPlayer = event.getOriginalAboutToBeSetTarget();
+ 
          if (!(potentialPlayer instanceof Player player)) return;
          if (player.level().isClientSide()) return;
  
@@ -4916,7 +5355,16 @@ index 2aca82b..d9be819 100644
          if (abilityCap == null) return;
  
          boolean isSwooning = abilityCap.hasDelayTickerOfItem(ItemRegistry.BLACK_KNIFE.get().asItem());
-@@ -299,7 +274,7 @@ public class ForgeEvents {
+@@ -289,7 +275,7 @@ public class ForgeEvents {
+ 
+     //If mob has swooning player, remove target
+     @SubscribeEvent
+-    public void livingTick(LivingEvent.LivingTickEvent event) {
++    public static void livingTick(EntityTickEvent.Pre event) {
+         Entity entity = event.getEntity();
+ 
+         if (entity.level().isClientSide()) return;
+@@ -299,7 +285,7 @@ public class ForgeEvents {
  
          if (!(potentialPlayer instanceof Player player)) return;
  
@@ -4925,11 +5373,20 @@ index 2aca82b..d9be819 100644
          if (abilityCap == null) return;
  
          boolean isSwooning = abilityCap.hasDelayTickerOfItem(ItemRegistry.BLACK_KNIFE.get().asItem());
+@@ -310,7 +296,7 @@ public class ForgeEvents {
+     }
+ 
+     @SubscribeEvent
+-    public void onChatMessage(ServerChatEvent event) {
++    public static void onChatMessage(ServerChatEvent event) {
+         ServerPlayer player = event.getPlayer();
+         Level level = player.level();
+ 
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/event/custom/RegisterStorageHandlersEvent.java b/src/main/java/destiny/penumbra_phantasm/server/event/custom/RegisterStorageHandlersEvent.java
-index 2d2924c..2d10d7d 100644
+index 2d2924c..145f321 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/event/custom/RegisterStorageHandlersEvent.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/event/custom/RegisterStorageHandlersEvent.java
-@@ -1,12 +1,12 @@
+@@ -1,12 +1,8 @@
  package destiny.penumbra_phantasm.server.event.custom;
  
  import destiny.penumbra_phantasm.server.transformations.inventory.handlers.IStorageHandler;
@@ -4939,15 +5396,22 @@ index 2d2924c..2d10d7d 100644
 -import net.minecraftforge.fml.LogicalSide;
 -import net.minecraftforge.fml.event.IModBusEvent;
 -import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-+import net.neoforged.neoforge.client.gui.overlay.IGuiOverlay;
-+import net.neoforged.bus.api.Cancelable;
 +import net.neoforged.bus.api.Event;
-+import net.neoforged.fml.LogicalSide;
 +import net.neoforged.fml.event.IModBusEvent;
-+import net.neoforged.fml.javafmlmod.FMLJavaModLoadingContext;
  
  import java.util.List;
  
+@@ -14,9 +10,7 @@ import java.util.List;
+  * Allows users to register custom {@link IStorageHandler Storage Handlers}.
+  * A Storage Handler is an object that handles the players inventory when swapping for Inventory Separation in Dark Worlds.
+  *
+- * <p>This event is not {@linkplain Cancelable cancellable}, and does not {@linkplain HasResult have a result}.
+- *
+- * <p>This event is fired on the {@linkplain FMLJavaModLoadingContext#getModEventBus() mod-specific event bus}
++ * <p>This event is fired on the mod-specific event bus
+  */
+ public class RegisterStorageHandlersEvent extends Event implements IModBusEvent
+ {
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/fluid/LuminescentWaterFluidType.java b/src/main/java/destiny/penumbra_phantasm/server/fluid/LuminescentWaterFluidType.java
 index 2c2cd00..bf48c85 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/fluid/LuminescentWaterFluidType.java
@@ -5001,7 +5465,7 @@ index 1e46d22..65f9e54 100644
  import org.joml.Vector3f;
  
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/fountain/DarkFountain.java b/src/main/java/destiny/penumbra_phantasm/server/fountain/DarkFountain.java
-index 292d32d..0d3952e 100644
+index 292d32d..e797eae 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/fountain/DarkFountain.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/fountain/DarkFountain.java
 @@ -1,5 +1,6 @@
@@ -5011,7 +5475,12 @@ index 292d32d..0d3952e 100644
  import destiny.penumbra_phantasm.ServerConfig;
  import destiny.penumbra_phantasm.client.network.*;
  import destiny.penumbra_phantasm.client.sound.SoundWrapper;
-@@ -33,10 +34,10 @@ import net.minecraft.world.level.portal.PortalInfo;
+@@ -29,14 +30,13 @@ import net.minecraft.world.level.levelgen.Heightmap;
+ import net.minecraft.world.level.block.DoorBlock;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+-import net.minecraft.world.level.portal.PortalInfo;
++import net.minecraft.world.level.portal.DimensionTransition;
  import net.minecraft.world.phys.AABB;
  import net.minecraft.world.phys.Vec2;
  import net.minecraft.world.phys.Vec3;
@@ -5019,14 +5488,13 @@ index 292d32d..0d3952e 100644
 -import net.minecraftforge.common.util.LazyOptional;
 -import net.minecraftforge.network.PacketDistributor;
 -import net.minecraftforge.registries.ForgeRegistries;
-+import net.neoforged.neoforge.common.util.ITeleporter;
 +import destiny.penumbra_phantasm.compat.legacy.LazyOptional;
 +import destiny.penumbra_phantasm.compat.legacy.PacketDistributor;
 +import net.minecraft.core.registries.BuiltInRegistries;
  
  import javax.annotation.Nullable;
  import java.util.*;
-@@ -158,15 +159,15 @@ public class DarkFountain {
+@@ -158,15 +158,15 @@ public class DarkFountain {
  
                          PacketHandlerRegistry.INSTANCE.send(
                                  PacketDistributor.NEAR.with(() -> new PacketDistributor.TargetPoint(x, y, z, 32.0, level.dimension())),
@@ -5045,7 +5513,7 @@ index 292d32d..0d3952e 100644
                          );
                      }
                  }
-@@ -298,7 +299,7 @@ public class DarkFountain {
+@@ -298,7 +298,7 @@ public class DarkFountain {
              }
          }
  
@@ -5054,7 +5522,7 @@ index 292d32d..0d3952e 100644
                  .map(cap -> cap.darkFountains.get(this.fountainPos) == this)
                  .orElse(false);
          if (stillPresent) {
-@@ -384,7 +385,7 @@ public class DarkFountain {
+@@ -384,7 +384,7 @@ public class DarkFountain {
              }
  
              DarkFountainCapability darkFountainCapability = null;
@@ -5063,7 +5531,7 @@ index 292d32d..0d3952e 100644
              if(darkLazyCapability.isPresent() && darkLazyCapability.resolve().isPresent())
                  darkFountainCapability = darkLazyCapability.resolve().get();
  
-@@ -410,7 +411,7 @@ public class DarkFountain {
+@@ -410,7 +410,7 @@ public class DarkFountain {
  
                      Vec3 lightPos = destinationPos.getCenter();
  
@@ -5072,7 +5540,7 @@ index 292d32d..0d3952e 100644
                          cap.sealShineTicker = -1;
                          cap.syncToClient(serverPlayer);
                      });
-@@ -423,7 +424,7 @@ public class DarkFountain {
+@@ -423,7 +423,7 @@ public class DarkFountain {
  
              //Get light fountain capability
              DarkFountainCapability lightFountainCapability = null;
@@ -5081,7 +5549,7 @@ index 292d32d..0d3952e 100644
              if(lightLazyCapability.isPresent() && lightLazyCapability.resolve().isPresent())
                  lightFountainCapability = lightLazyCapability.resolve().get();
  
-@@ -502,7 +503,7 @@ public class DarkFountain {
+@@ -502,7 +502,7 @@ public class DarkFountain {
                      room.getTransportTickers().put(entityId, ticker);
  
                      int finalTicker = ticker;
@@ -5090,7 +5558,7 @@ index 292d32d..0d3952e 100644
  
                      if (ticker == TRANSPORT_TICKER_DURATION) {
                          completedThisTick.add(entityId);
-@@ -510,7 +511,7 @@ public class DarkFountain {
+@@ -510,7 +510,7 @@ public class DarkFountain {
                  } else {
                      ticker = Math.max(ticker - 1, 0);
                      int finalTicker = ticker;
@@ -5099,7 +5567,7 @@ index 292d32d..0d3952e 100644
                      if (ticker == 0) {
                          room.getTransportTickers().remove(entityId);
                      } else {
-@@ -520,7 +521,7 @@ public class DarkFountain {
+@@ -520,7 +520,7 @@ public class DarkFountain {
              }
  
              if (!completedThisTick.isEmpty()) {
@@ -5108,7 +5576,7 @@ index 292d32d..0d3952e 100644
                                  cap.darkFountains.get(destinationPos)).orElse(null);
  
                  if (destinationFountain != null) {
-@@ -595,7 +596,7 @@ public class DarkFountain {
+@@ -595,7 +595,7 @@ public class DarkFountain {
  
      public static @Nullable Set<BlockPos> otherFountainAnchors(ServerLevel level, @Nullable BlockPos excludeFountainAnchor) {
          HashSet<BlockPos> anchors = new HashSet<>();
@@ -5117,7 +5585,7 @@ index 292d32d..0d3952e 100644
              for (Map.Entry<BlockPos, DarkFountain> e : cap.darkFountains.entrySet()) {
                  if (e.getKey().equals(excludeFountainAnchor)) continue;
                  anchors.add(e.getValue().getFountainPos());
-@@ -607,7 +608,7 @@ public class DarkFountain {
+@@ -607,7 +607,7 @@ public class DarkFountain {
      public static Map<BlockPos, ResourceKey<Level>> otherFountainRoomCellsToDarkWorld(ServerLevel level, @Nullable BlockPos excludeFountainAnchor) {
          Map<BlockPos, ResourceKey<Level>> map = new HashMap<>();
  
@@ -5126,7 +5594,7 @@ index 292d32d..0d3952e 100644
              for (Map.Entry<BlockPos, DarkFountain> entry : cap.darkFountains.entrySet()) {
                  if (entry.getKey().equals(excludeFountainAnchor)) continue;
  
-@@ -818,7 +819,7 @@ public class DarkFountain {
+@@ -818,7 +818,7 @@ public class DarkFountain {
                  if (this.teleportedEntities.contains(player.getUUID())) continue;
                  if (!posSet.contains(player.blockPosition()) && !posSet.contains(player.blockPosition().above())) continue;
  
@@ -5135,7 +5603,7 @@ index 292d32d..0d3952e 100644
                      DarkFountain destinationFountain = cap.darkFountains.get(destinationPos);
  
                      if (destinationFountain != null) {
-@@ -1034,7 +1035,7 @@ public class DarkFountain {
+@@ -1034,7 +1034,7 @@ public class DarkFountain {
      private static boolean canPierceFountain(ServerPlayer player) {
          if (player.isCreative()) return true;
  
@@ -5144,7 +5612,7 @@ index 292d32d..0d3952e 100644
  
          return soulCap.determination >= 100;
      }
-@@ -1045,12 +1046,12 @@ public class DarkFountain {
+@@ -1045,12 +1045,12 @@ public class DarkFountain {
          ServerLevel depths = DarkWorldUtil.getDepths(darkLevel.getServer());
          if (depths == null) return;
  
@@ -5159,7 +5627,7 @@ index 292d32d..0d3952e 100644
              cap.depthsEntryTicker = 0;
              cap.darknessOverlayTicker = TRANSPORT_TICKER_DURATION;
              cap.syncToClient(player);
-@@ -1114,7 +1115,7 @@ public class DarkFountain {
+@@ -1114,7 +1114,7 @@ public class DarkFountain {
  
          if (darkLevel == null) return;
  
@@ -5168,7 +5636,7 @@ index 292d32d..0d3952e 100644
                  cap.darkFountains.get(this.destinationPos)).orElse(null);
  
          Vec3 dest = Vec3.atCenterOf(this.destinationPos).add(DEPTHS_EJECT_OFFSET, 0, 0);
-@@ -1135,7 +1136,7 @@ public class DarkFountain {
+@@ -1135,7 +1135,7 @@ public class DarkFountain {
  
          if (depths == null) return;
  
@@ -5177,7 +5645,7 @@ index 292d32d..0d3952e 100644
          this.depthsPos = null;
      }
  
-@@ -1152,7 +1153,7 @@ public class DarkFountain {
+@@ -1152,7 +1152,7 @@ public class DarkFountain {
      }
  
      public static boolean isDepthsOccupied(ServerLevel depths, Vec2 depthsPos) {
@@ -5186,7 +5654,7 @@ index 292d32d..0d3952e 100644
              for (DarkFountain fountain : cap.darkFountains.values()) {
                  Vec2 originPos = new Vec2(depthsPos.x, depthsPos.y);
                  Vec2 fountainPos = new Vec2(fountain.fountainPos.getX(), fountain.fountainPos.getZ());
-@@ -1174,7 +1175,7 @@ public class DarkFountain {
+@@ -1174,7 +1174,7 @@ public class DarkFountain {
  
      public static Vec2 getBumpedDepthsXZ(ServerLevel depths, Vec2 originPos) {
          DarkFountainCapability capability;
@@ -5195,6 +5663,33 @@ index 292d32d..0d3952e 100644
  
          if(darkLazyCapability.isPresent() && darkLazyCapability.resolve().isPresent())
              capability = darkLazyCapability.resolve().get();
+@@ -1416,7 +1416,7 @@ public class DarkFountain {
+         return frameOptimized;
+     }
+ 
+-    public static class DarkFountainTeleporter implements ITeleporter {
++    public static class DarkFountainTeleporter {
+         private final Vec3 pos;
+         private final Vec3 momentum;
+         private final float newYRot;
+@@ -1429,14 +1429,8 @@ public class DarkFountain {
+             this.newXRot = newXRot;
+         }
+ 
+-        @Override
+-        public @Nullable PortalInfo getPortalInfo(Entity entity, ServerLevel destWorld, Function<ServerLevel, PortalInfo> defaultPortalInfo) {
+-            return new PortalInfo(pos, momentum, newYRot, newXRot);
+-        }
+-
+-        @Override
+-        public boolean playTeleportSound(ServerPlayer player, ServerLevel sourceWorld, ServerLevel destWorld) {
+-            return false;
++        public DimensionTransition toTransition(ServerLevel destWorld) {
++            return new DimensionTransition(destWorld, pos, momentum, newYRot, newXRot, DimensionTransition.DO_NOTHING);
+         }
+     }
+ }
+\ No newline at end of file
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/fountain/GenericProvider.java b/src/main/java/destiny/penumbra_phantasm/server/fountain/GenericProvider.java
 deleted file mode 100644
 index 736da64..0000000
@@ -5288,10 +5783,10 @@ index b680725..ddb2947 100644
                  if (darkDim.equals(fountain.destinationDimension) && darkFountainAnchor.equals(fountain.destinationPos)) {
                      fountain.teleportedEntities.add(playerId);
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/item/BlackKnifeItem.java b/src/main/java/destiny/penumbra_phantasm/server/item/BlackKnifeItem.java
-index f803559..28c4f65 100644
+index f803559..7ca2718 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/item/BlackKnifeItem.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/item/BlackKnifeItem.java
-@@ -21,8 +21,8 @@ import net.minecraft.world.entity.player.Player;
+@@ -21,12 +21,12 @@ import net.minecraft.world.entity.player.Player;
  import net.minecraft.world.item.ItemStack;
  import net.minecraft.world.item.Tier;
  import net.minecraft.world.level.Level;
@@ -5301,7 +5796,13 @@ index f803559..28c4f65 100644
 +import net.neoforged.neoforge.common.NeoForgeMod;
  import org.jetbrains.annotations.NotNull;
  import software.bernie.geckolib.animatable.GeoItem;
- import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
+-import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
+-import software.bernie.geckolib.core.animation.AnimatableManager;
++import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
++import software.bernie.geckolib.animatable.manager.AnimatableManager;
+ import software.bernie.geckolib.util.GeckoLibUtil;
+ 
+ import java.util.function.Consumer;
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/item/CheshireChestItem.java b/src/main/java/destiny/penumbra_phantasm/server/item/CheshireChestItem.java
 index 3885f20..72b220a 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/item/CheshireChestItem.java
@@ -5556,18 +6057,23 @@ index 57e6d62..81d52c8 100644
  
          if (player.getHealth() < player.getMaxHealth() / 2) {
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/item/FamiliarAxItem.java b/src/main/java/destiny/penumbra_phantasm/server/item/FamiliarAxItem.java
-index b151ab8..444755a 100644
+index b151ab8..e3dcd5f 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/item/FamiliarAxItem.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/item/FamiliarAxItem.java
-@@ -5,7 +5,7 @@ import destiny.penumbra_phantasm.client.render.item.FamiliarAxItemRenderer;
+@@ -5,10 +5,10 @@ import destiny.penumbra_phantasm.client.render.item.FamiliarAxItemRenderer;
  import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
  import net.minecraft.world.item.AxeItem;
  import net.minecraft.world.item.Tier;
 -import net.minecraftforge.client.extensions.common.IClientItemExtensions;
 +import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
  import software.bernie.geckolib.animatable.GeoItem;
- import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
- import software.bernie.geckolib.core.animation.AnimatableManager;
+-import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
+-import software.bernie.geckolib.core.animation.AnimatableManager;
++import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
++import software.bernie.geckolib.animatable.manager.AnimatableManager;
+ import software.bernie.geckolib.util.GeckoLibUtil;
+ 
+ import java.util.function.Consumer;
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/item/FlavorTooltipItem.java b/src/main/java/destiny/penumbra_phantasm/server/item/FlavorTooltipItem.java
 index 4ecf499..1d2c9c4 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/item/FlavorTooltipItem.java
@@ -5735,6 +6241,30 @@ index 0c739c5..a0af0ca 100644
      }
  }
 \ No newline at end of file
+diff --git a/src/main/java/destiny/penumbra_phantasm/server/item/MusicMediumItem.java b/src/main/java/destiny/penumbra_phantasm/server/item/MusicMediumItem.java
+index 46b07ab..c43062f 100644
+--- a/src/main/java/destiny/penumbra_phantasm/server/item/MusicMediumItem.java
++++ b/src/main/java/destiny/penumbra_phantasm/server/item/MusicMediumItem.java
+@@ -2,15 +2,12 @@ package destiny.penumbra_phantasm.server.item;
+ 
+ import net.minecraft.network.chat.Component;
+ import net.minecraft.network.chat.Style;
+-import net.minecraft.sounds.SoundEvent;
+ import net.minecraft.world.item.ItemStack;
+-import net.minecraft.world.item.RecordItem;
++import net.minecraft.world.item.Item;
+ 
+-import java.util.function.Supplier;
+-
+-public class MusicMediumItem extends RecordItem {
+-    public MusicMediumItem(int comparatorValue, Supplier<SoundEvent> soundSupplier, Properties builder, int lengthInTicks) {
+-        super(comparatorValue, soundSupplier, builder, lengthInTicks);
++public class MusicMediumItem extends Item {
++    public MusicMediumItem(Properties properties) {
++        super(properties);
+     }
+ 
+     @Override
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/item/NetheriteKnifeItem.java b/src/main/java/destiny/penumbra_phantasm/server/item/NetheriteKnifeItem.java
 index 8211dc1..7877ce2 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/item/NetheriteKnifeItem.java
@@ -5777,27 +6307,35 @@ index 3ffafcd..3c9c2fb 100644
              return builder.build();
          }
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/item/ScarletBucketItem.java b/src/main/java/destiny/penumbra_phantasm/server/item/ScarletBucketItem.java
-index 7d5e2d9..7ad1b42 100644
+index 7d5e2d9..7b1ab4d 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/item/ScarletBucketItem.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/item/ScarletBucketItem.java
-@@ -20,7 +20,7 @@ import net.minecraft.world.level.material.Fluid;
+@@ -20,7 +20,6 @@ import net.minecraft.world.level.material.Fluid;
  import net.minecraft.world.level.material.Fluids;
  import net.minecraft.world.phys.BlockHitResult;
  import net.minecraft.world.phys.HitResult;
 -import net.minecraftforge.event.ForgeEventFactory;
-+import net.neoforged.neoforge.event.EventHooks;
  
  public class ScarletBucketItem extends BucketItem {
      private final Fluid content;
-@@ -34,7 +34,7 @@ public class ScarletBucketItem extends BucketItem {
+@@ -34,7 +33,7 @@ public class ScarletBucketItem extends BucketItem {
      public InteractionResultHolder<ItemStack> use(Level pLevel, Player pPlayer, InteractionHand pHand) {
          ItemStack itemstack = pPlayer.getItemInHand(pHand);
          BlockHitResult blockhitresult = getPlayerPOVHitResult(pLevel, pPlayer, this.content == Fluids.EMPTY ? net.minecraft.world.level.ClipContext.Fluid.SOURCE_ONLY : net.minecraft.world.level.ClipContext.Fluid.NONE);
 -        InteractionResultHolder<ItemStack> ret = ForgeEventFactory.onBucketUse(pPlayer, pLevel, itemstack, blockhitresult);
-+        InteractionResultHolder<ItemStack> ret = EventHooks.onBucketUse(pPlayer, pLevel, itemstack, blockhitresult);
++        InteractionResultHolder<ItemStack> ret = null;
  
          if (ret != null) {
              return ret;
+@@ -69,7 +68,7 @@ public class ScarletBucketItem extends BucketItem {
+                     return InteractionResultHolder.fail(itemstack);
+                 } else {
+                     BlockState blockstate = pLevel.getBlockState(blockpos);
+-                    BlockPos blockpos2 = this.canBlockContainFluid(pLevel, blockpos, blockstate) ? blockpos : blockpos1;
++                    BlockPos blockpos2 = this.canBlockContainFluid(pPlayer, pLevel, blockpos, blockstate) ? blockpos : blockpos1;
+                     if (this.emptyContents(pPlayer, pLevel, blockpos2, blockhitresult, itemstack)) {
+                         this.checkExtraContent(pPlayer, pLevel, itemstack, blockpos2);
+                         if (pPlayer instanceof ServerPlayer) {
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/item/SoulHearthItem.java b/src/main/java/destiny/penumbra_phantasm/server/item/SoulHearthItem.java
 index d100c19..7321964 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/item/SoulHearthItem.java
@@ -6103,6 +6641,33 @@ index 6fc031e..bd16919 100644
  		if (cap.hasEggRoomManGone(CardKingdomEggRoomUtil.CARD_KINGDOM_BIT)) {
  			return;
  		}
+diff --git a/src/main/java/destiny/penumbra_phantasm/server/registry/AdvancementRegistry.java b/src/main/java/destiny/penumbra_phantasm/server/registry/AdvancementRegistry.java
+index ef7793a..50cf7f6 100644
+--- a/src/main/java/destiny/penumbra_phantasm/server/registry/AdvancementRegistry.java
++++ b/src/main/java/destiny/penumbra_phantasm/server/registry/AdvancementRegistry.java
+@@ -1,19 +1,10 @@
+ package destiny.penumbra_phantasm.server.registry;
+ 
+ import destiny.penumbra_phantasm.server.advancement.TriggerCriterions;
+-import destiny.penumbra_phantasm.server.advancement.ChangedDimensionContainsTrigger;
+-import net.minecraft.advancements.CriteriaTriggers;
++import net.neoforged.bus.api.IEventBus;
+ 
+ public class AdvancementRegistry {
+-    public static void register() {
+-        CriteriaTriggers.register(TriggerCriterions.DARK_FOUNTAIN_MAKE);
+-        CriteriaTriggers.register(TriggerCriterions.DARK_FOUNTAIN_SEAL);
+-        CriteriaTriggers.register(ChangedDimensionContainsTrigger.INSTANCE);
+-        CriteriaTriggers.register(TriggerCriterions.DETERMINATION_INJECTION);
+-        CriteriaTriggers.register(TriggerCriterions.DETERMINATION_INJECTION_DEATH);
+-        CriteriaTriggers.register(TriggerCriterions.DETERMINATION_INJECTION_OVERDOSE);
+-        CriteriaTriggers.register(TriggerCriterions.DETERMINATION_INJECTION_CAUSE_OVERDOSE);
+-        CriteriaTriggers.register(TriggerCriterions.DETERMINATION_INJECTION_STEAL);
+-        CriteriaTriggers.register(TriggerCriterions.SOUL_HEARTH);
++    public static void register(IEventBus modEventBus) {
++        TriggerCriterions.TRIGGERS.register(modEventBus);
+     }
+ }
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/registry/BlockEntityRegistry.java b/src/main/java/destiny/penumbra_phantasm/server/registry/BlockEntityRegistry.java
 index c6fea10..e2ddc76 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/registry/BlockEntityRegistry.java
@@ -6149,10 +6714,10 @@ index c6fea10..e2ddc76 100644
  }
 \ No newline at end of file
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/registry/BlockRegistry.java b/src/main/java/destiny/penumbra_phantasm/server/registry/BlockRegistry.java
-index 0d00dbc..b5de767 100644
+index 0d00dbc..c3edb3e 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/registry/BlockRegistry.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/registry/BlockRegistry.java
-@@ -21,16 +21,16 @@ import net.minecraft.world.level.block.state.properties.BlockSetType;
+@@ -21,26 +21,26 @@ import net.minecraft.world.level.block.state.properties.BlockSetType;
  import net.minecraft.world.level.block.state.properties.WoodType;
  import net.minecraft.world.level.material.MapColor;
  import net.minecraft.world.level.material.PushReaction;
@@ -6169,42 +6734,69 @@ index 0d00dbc..b5de767 100644
  
  public class BlockRegistry {
 -    public static final DeferredRegister<Block> BLOCKS = DeferredRegister.create(ForgeRegistries.BLOCKS, PenumbraPhantasm.MODID);
+-
+-    public static final BlockBehaviour.Properties SCARLET_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.CHERRY_PLANKS).mapColor(MapColor.COLOR_PINK);
+-    public static final BlockBehaviour.Properties DARK_CANDY_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.CHERRY_PLANKS).mapColor(MapColor.COLOR_RED);
+-    public static final BlockBehaviour.Properties SCARLET_MARBLE_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops();
+-    public static final BlockBehaviour.Properties DARK_MARBLE_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops();
+-    public static final BlockBehaviour.Properties UMBRASTONE_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops();
+-    public static final BlockBehaviour.Properties CLIFFROCK_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF);
+-    public static final BlockBehaviour.Properties TENEBRALITH_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().sound(SoundType.DEEPSLATE);
+-    public static final BlockBehaviour.Properties ROSEGOLD_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().sound(SoundType.METAL);
+-    public static final BlockBehaviour.Properties IVORY_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().sound(SoundType.BONE_BLOCK);
 +    public static final DeferredRegister<Block> BLOCKS = DeferredRegister.create(BuiltInRegistries.BLOCK, PenumbraPhantasm.MODID);
++
++    public static final BlockBehaviour.Properties SCARLET_PROPERTIES = BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_PLANKS).mapColor(MapColor.COLOR_PINK);
++    public static final BlockBehaviour.Properties DARK_CANDY_PROPERTIES = BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_PLANKS).mapColor(MapColor.COLOR_RED);
++    public static final BlockBehaviour.Properties SCARLET_MARBLE_PROPERTIES = BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops();
++    public static final BlockBehaviour.Properties DARK_MARBLE_PROPERTIES = BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops();
++    public static final BlockBehaviour.Properties UMBRASTONE_PROPERTIES = BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops();
++    public static final BlockBehaviour.Properties CLIFFROCK_PROPERTIES = BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF);
++    public static final BlockBehaviour.Properties TENEBRALITH_PROPERTIES = BlockBehaviour.Properties.ofFullCopy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().sound(SoundType.DEEPSLATE);
++    public static final BlockBehaviour.Properties ROSEGOLD_PROPERTIES = BlockBehaviour.Properties.ofFullCopy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().sound(SoundType.METAL);
++    public static final BlockBehaviour.Properties IVORY_PROPERTIES = BlockBehaviour.Properties.ofFullCopy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().sound(SoundType.BONE_BLOCK);
  
-     public static final BlockBehaviour.Properties SCARLET_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.CHERRY_PLANKS).mapColor(MapColor.COLOR_PINK);
-     public static final BlockBehaviour.Properties DARK_CANDY_PROPERTIES = BlockBehaviour.Properties.copy(Blocks.CHERRY_PLANKS).mapColor(MapColor.COLOR_RED);
+     public static final BlockSetType SCARLET_MARBLE_BLOCKSET = new BlockSetType("scarlet_marble", true, SoundType.CALCITE, SoundEvents.WOODEN_DOOR_CLOSE, SoundEvents.WOODEN_DOOR_OPEN, SoundEvents.WOODEN_TRAPDOOR_CLOSE, SoundEvents.WOODEN_TRAPDOOR_OPEN, SoundEvents.STONE_PRESSURE_PLATE_CLICK_OFF, SoundEvents.STONE_PRESSURE_PLATE_CLICK_ON, SoundEvents.STONE_BUTTON_CLICK_OFF, SoundEvents.STONE_BUTTON_CLICK_ON);
+     public static final BlockSetType DARK_MARBLE_BLOCKSET = new BlockSetType("dark_marble", true, SoundType.CALCITE, SoundEvents.WOODEN_DOOR_CLOSE, SoundEvents.WOODEN_DOOR_OPEN, SoundEvents.WOODEN_TRAPDOOR_CLOSE, SoundEvents.WOODEN_TRAPDOOR_OPEN, SoundEvents.STONE_PRESSURE_PLATE_CLICK_OFF, SoundEvents.STONE_PRESSURE_PLATE_CLICK_ON, SoundEvents.STONE_BUTTON_CLICK_OFF, SoundEvents.STONE_BUTTON_CLICK_ON);
 @@ -49,480 +49,480 @@ public class BlockRegistry {
      public static final BlockSetType ROSEGOLD_BLOCKSET = new BlockSetType("rosegold", true, SoundType.METAL, SoundEvents.WOODEN_DOOR_CLOSE, SoundEvents.WOODEN_DOOR_OPEN, SoundEvents.WOODEN_TRAPDOOR_CLOSE, SoundEvents.WOODEN_TRAPDOOR_OPEN, SoundEvents.STONE_PRESSURE_PLATE_CLICK_OFF, SoundEvents.STONE_PRESSURE_PLATE_CLICK_ON, SoundEvents.STONE_BUTTON_CLICK_OFF, SoundEvents.STONE_BUTTON_CLICK_ON);
      public static final BlockSetType IVORY_BLOCKSET = new BlockSetType("ivory", true, SoundType.BONE_BLOCK, SoundEvents.WOODEN_DOOR_CLOSE, SoundEvents.WOODEN_DOOR_OPEN, SoundEvents.WOODEN_TRAPDOOR_CLOSE, SoundEvents.WOODEN_TRAPDOOR_OPEN, SoundEvents.STONE_PRESSURE_PLATE_CLICK_OFF, SoundEvents.STONE_PRESSURE_PLATE_CLICK_ON, SoundEvents.STONE_BUTTON_CLICK_OFF, SoundEvents.STONE_BUTTON_CLICK_ON);
  
 -    public static final RegistryObject<Block> TWILIGHT_GRASS_BLOCK = registerBlock("twilight_grass_block",
+-            () -> new TwilightGrassBlock(BlockBehaviour.Properties.copy(Blocks.GRASS_BLOCK)
 +    public static final DeferredHolder<?, Block> TWILIGHT_GRASS_BLOCK = registerBlock("twilight_grass_block",
-             () -> new TwilightGrassBlock(BlockBehaviour.Properties.copy(Blocks.GRASS_BLOCK)
++            () -> new TwilightGrassBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.GRASS_BLOCK)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.GRASS).randomTicks()));
 -    public static final RegistryObject<Block> TWILIGHT_GRASS = registerBlock("twilight_grass",
+-            () -> new NonTallGrassBlock(BlockBehaviour.Properties.copy(Blocks.GRASS)
 +    public static final DeferredHolder<?, Block> TWILIGHT_GRASS = registerBlock("twilight_grass",
-             () -> new NonTallGrassBlock(BlockBehaviour.Properties.copy(Blocks.GRASS)
++            () -> new NonTallGrassBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.GRASS)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.GRASS)));
  
 -    public static final RegistryObject<Block> NIGHT_GRASS_BLOCK = registerBlock("night_grass_block",
+-            () -> new NightGrassBlock(BlockBehaviour.Properties.copy(Blocks.GRASS_BLOCK)
 +    public static final DeferredHolder<?, Block> NIGHT_GRASS_BLOCK = registerBlock("night_grass_block",
-             () -> new NightGrassBlock(BlockBehaviour.Properties.copy(Blocks.GRASS_BLOCK)
++            () -> new NightGrassBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.GRASS_BLOCK)
                      .mapColor(MapColor.COLOR_MAGENTA).sound(SoundType.GRASS).randomTicks()));
 -    public static final RegistryObject<Block> NIGHT_GRASS = registerBlock("night_grass",
+-            () -> new NonTallGrassBlock(BlockBehaviour.Properties.copy(Blocks.GRASS)
 +    public static final DeferredHolder<?, Block> NIGHT_GRASS = registerBlock("night_grass",
-             () -> new NonTallGrassBlock(BlockBehaviour.Properties.copy(Blocks.GRASS)
++            () -> new NonTallGrassBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.GRASS)
                      .mapColor(MapColor.COLOR_MAGENTA).sound(SoundType.GRASS)));
 -    public static final RegistryObject<Block> ECHO_FLOWER = registerBlock("echo_flower",
+-            () -> new EchoFlowerBlock(BlockBehaviour.Properties.copy(Blocks.SUNFLOWER)
 +    public static final DeferredHolder<?, Block> ECHO_FLOWER = registerBlock("echo_flower",
-             () -> new EchoFlowerBlock(BlockBehaviour.Properties.copy(Blocks.SUNFLOWER)
++            () -> new EchoFlowerBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.SUNFLOWER)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.PINK_PETALS)));
 -    public static final RegistryObject<Block> STARTAIL = registerBlock("startail",
+-            () -> new StartailBlock(BlockBehaviour.Properties.copy(Blocks.SUNFLOWER)
 +    public static final DeferredHolder<?, Block> STARTAIL = registerBlock("startail",
-             () -> new StartailBlock(BlockBehaviour.Properties.copy(Blocks.SUNFLOWER)
++            () -> new StartailBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.SUNFLOWER)
                      .mapColor(MapColor.COLOR_PURPLE).sound(SoundType.PINK_PETALS).lightLevel(state -> 15)));
 -    public static final RegistryObject<Block> NIGHT_DIRT = registerBlock("night_dirt",
+-            () -> new Block(BlockBehaviour.Properties.copy(Blocks.DIRT)
 +    public static final DeferredHolder<?, Block> NIGHT_DIRT = registerBlock("night_dirt",
-             () -> new Block(BlockBehaviour.Properties.copy(Blocks.DIRT)
++            () -> new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.DIRT)
                      .mapColor(MapColor.COLOR_MAGENTA).sound(SoundType.GRAVEL)));
  
  
@@ -6215,7 +6807,7 @@ index 0d00dbc..b5de767 100644
 -    public static final RegistryObject<Block> UMBRASTONE_FURNACE = registerBlock("umbrastone_furnace", () -> new UmbrastoneFurnaceBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().lightLevel(state -> state.getValue(LIT) ? 10 : 0)));
 +    public static final DeferredHolder<?, Block> UMBRASTONE_PILLAR = registerBlock("umbrastone_pillar", () -> new RotatedPillarBlock(UMBRASTONE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> CHISELED_UMBRASTONE = registerBlock("chiseled_umbrastone", () -> new Block(UMBRASTONE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> UMBRASTONE_FURNACE = registerBlock("umbrastone_furnace", () -> new UmbrastoneFurnaceBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().lightLevel(state -> state.getValue(LIT) ? 10 : 0)));
++    public static final DeferredHolder<?, Block> UMBRASTONE_FURNACE = registerBlock("umbrastone_furnace", () -> new UmbrastoneFurnaceBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().lightLevel(state -> state.getValue(LIT) ? 10 : 0)));
  
      //Polished umbrastone
 -    public static final RegistryObject<Block> POLISHED_UMBRASTONE = registerBlock("polished_umbrastone", () -> new Block(UMBRASTONE_PROPERTIES));
@@ -6228,8 +6820,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> POLISHED_UMBRASTONE_STAIRS = registerBlock("polished_umbrastone_stairs", () -> new StairBlock(BlockRegistry.POLISHED_UMBRASTONE.get().defaultBlockState(), UMBRASTONE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_UMBRASTONE_SLAB = registerBlock("polished_umbrastone_slab", () -> new SlabBlock(UMBRASTONE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_UMBRASTONE_WALL = registerBlock("polished_umbrastone_wall", () -> new WallBlock(UMBRASTONE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> POLISHED_UMBRASTONE_BUTTON = registerBlock("polished_umbrastone_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> POLISHED_UMBRASTONE_PRESSURE_PLATE = registerBlock("polished_umbrastone_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET));
++    public static final DeferredHolder<?, Block> POLISHED_UMBRASTONE_BUTTON = registerBlock("polished_umbrastone_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> POLISHED_UMBRASTONE_PRESSURE_PLATE = registerBlock("polished_umbrastone_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET));
  
      //Umbrastone bricks
 -    public static final RegistryObject<Block> UMBRASTONE_BRICKS = registerBlock("umbrastone_bricks", () -> new Block(UMBRASTONE_PROPERTIES));
@@ -6242,8 +6834,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> UMBRASTONE_BRICK_STAIRS = registerBlock("umbrastone_brick_stairs", () -> new StairBlock(BlockRegistry.UMBRASTONE_BRICKS.get().defaultBlockState(), UMBRASTONE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> UMBRASTONE_BRICK_SLAB = registerBlock("umbrastone_brick_slab", () -> new SlabBlock(UMBRASTONE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> UMBRASTONE_BRICK_WALL = registerBlock("umbrastone_brick_wall", () -> new WallBlock(UMBRASTONE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> UMBRASTONE_BRICK_BUTTON = registerBlock("umbrastone_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> UMBRASTONE_BRICK_PRESSURE_PLATE = registerBlock("umbrastone_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET));
++    public static final DeferredHolder<?, Block> UMBRASTONE_BRICK_BUTTON = registerBlock("umbrastone_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> UMBRASTONE_BRICK_PRESSURE_PLATE = registerBlock("umbrastone_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET));
  
      //Umbrastone
 -    public static final RegistryObject<Block> UMBRASTONE = registerBlock("umbrastone", () -> new Block(UMBRASTONE_PROPERTIES));
@@ -6256,8 +6848,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> UMBRASTONE_STAIRS = registerBlock("umbrastone_stairs", () -> new StairBlock(BlockRegistry.UMBRASTONE.get().defaultBlockState(), UMBRASTONE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> UMBRASTONE_SLAB = registerBlock("umbrastone_slab", () -> new SlabBlock(UMBRASTONE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> UMBRASTONE_WALL = registerBlock("umbrastone_wall", () -> new WallBlock(UMBRASTONE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> UMBRASTONE_BUTTON = registerBlock("umbrastone_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> UMBRASTONE_PRESSURE_PLATE = registerBlock("umbrastone_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET));
++    public static final DeferredHolder<?, Block> UMBRASTONE_BUTTON = registerBlock("umbrastone_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> UMBRASTONE_PRESSURE_PLATE = registerBlock("umbrastone_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET));
  
      //Cobbled umbrastone
 -    public static final RegistryObject<Block> COBBLED_UMBRASTONE = registerBlock("cobbled_umbrastone", () -> new Block(UMBRASTONE_PROPERTIES));
@@ -6270,8 +6862,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> COBBLED_UMBRASTONE_STAIRS = registerBlock("cobbled_umbrastone_stairs", () -> new StairBlock(BlockRegistry.COBBLED_UMBRASTONE.get().defaultBlockState(), UMBRASTONE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_UMBRASTONE_SLAB = registerBlock("cobbled_umbrastone_slab", () -> new SlabBlock(UMBRASTONE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_UMBRASTONE_WALL = registerBlock("cobbled_umbrastone_wall", () -> new WallBlock(UMBRASTONE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> COBBLED_UMBRASTONE_BUTTON = registerBlock("cobbled_umbrastone_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> COBBLED_UMBRASTONE_PRESSURE_PLATE = registerBlock("cobbled_umbrastone_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET));
++    public static final DeferredHolder<?, Block> COBBLED_UMBRASTONE_BUTTON = registerBlock("cobbled_umbrastone_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> COBBLED_UMBRASTONE_PRESSURE_PLATE = registerBlock("cobbled_umbrastone_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_MAGENTA).requiresCorrectToolForDrops().noCollission(), UMBRASTONE_BLOCKSET));
  
  
  
@@ -6281,54 +6873,65 @@ index 0d00dbc..b5de767 100644
              () -> new ScarletBushBlock(occludingLeaves().mapColor(MapColor.COLOR_RED).sound(SoundType.AZALEA_LEAVES)
                      .isViewBlocking((state, level, pos) -> false)));
 -    public static final RegistryObject<Block> TALL_SCARLET_BUSH = registerBlock("tall_scarlet_bush",
+-            () -> new SlowingDoublePlantBlock(BlockBehaviour.Properties.copy(Blocks.PEONY)
 +    public static final DeferredHolder<?, Block> TALL_SCARLET_BUSH = registerBlock("tall_scarlet_bush",
-             () -> new SlowingDoublePlantBlock(BlockBehaviour.Properties.copy(Blocks.PEONY)
++            () -> new SlowingDoublePlantBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.PEONY)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.PINK_PETALS).noCollission()));
 -    public static final RegistryObject<Block> SCARLET_ROSE = registerBlock("scarlet_rose",
+-            () -> new FlowerBlock(MobEffects.REGENERATION, 20, BlockBehaviour.Properties.copy(Blocks.POPPY)
 +    public static final DeferredHolder<?, Block> SCARLET_ROSE = registerBlock("scarlet_rose",
-             () -> new FlowerBlock(MobEffects.REGENERATION, 20, BlockBehaviour.Properties.copy(Blocks.POPPY)
++            () -> new FlowerBlock(MobEffects.REGENERATION, 20, BlockBehaviour.Properties.ofFullCopy(Blocks.POPPY)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.PINK_PETALS).noCollission()));
 -    public static final RegistryObject<Block> POTTED_SCARLET_ROSE = BLOCKS.register("potted_scarlet_rose",
 +    public static final DeferredHolder<?, Block> POTTED_SCARLET_ROSE = BLOCKS.register("potted_scarlet_rose",
              () -> new FlowerPotBlock(() -> ((FlowerPotBlock) Blocks.FLOWER_POT), BlockRegistry.SCARLET_ROSE,
-                     BlockBehaviour.Properties.copy(Blocks.POTTED_POPPY).noOcclusion()));
+-                    BlockBehaviour.Properties.copy(Blocks.POTTED_POPPY).noOcclusion()));
 -    public static final RegistryObject<Block> SCARLET_LEAVES = registerBlock("scarlet_leaves",
++                    BlockBehaviour.Properties.ofFullCopy(Blocks.POTTED_POPPY).noOcclusion()));
 +    public static final DeferredHolder<?, Block> SCARLET_LEAVES = registerBlock("scarlet_leaves",
              () -> new ScarletLeavesBlock(occludingLeaves().mapColor(MapColor.COLOR_PINK).sound(SoundType.AZALEA_LEAVES)
                      .isSuffocating((state, level, pos) -> false)
                      .isRedstoneConductor((state, level, pos) -> false)));
 -    public static final RegistryObject<Block> FALLEN_SCARLET_LEAVES = BLOCKS.register("fallen_scarlet_leaves",
+-            () -> new FallenLeafBlock(BlockBehaviour.Properties.copy(Blocks.PINK_PETALS)
 +    public static final DeferredHolder<?, Block> FALLEN_SCARLET_LEAVES = BLOCKS.register("fallen_scarlet_leaves",
-             () -> new FallenLeafBlock(BlockBehaviour.Properties.copy(Blocks.PINK_PETALS)
++            () -> new FallenLeafBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.PINK_PETALS)
                      .mapColor(MapColor.COLOR_PINK).sound(SoundType.PINK_PETALS).noCollission().noOcclusion().instabreak(), 1));
 -    public static final RegistryObject<Block> SCARLET_LOG = registerBlock("scarlet_log",
+-            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
 +    public static final DeferredHolder<?, Block> SCARLET_LOG = registerBlock("scarlet_log",
-             () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
++            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.CHERRY_WOOD)));
 -    public static final RegistryObject<Block> SCARLET_WOOD = registerBlock("scarlet_wood",
+-            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
 +    public static final DeferredHolder<?, Block> SCARLET_WOOD = registerBlock("scarlet_wood",
-             () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
++            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.CHERRY_WOOD)));
 -    public static final RegistryObject<Block> STRIPPED_SCARLET_LOG = registerBlock("stripped_scarlet_log",
+-            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
 +    public static final DeferredHolder<?, Block> STRIPPED_SCARLET_LOG = registerBlock("stripped_scarlet_log",
-             () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
++            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.CHERRY_WOOD)));
 -    public static final RegistryObject<Block> STRIPPED_SCARLET_WOOD = registerBlock("stripped_scarlet_wood",
+-            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
 +    public static final DeferredHolder<?, Block> STRIPPED_SCARLET_WOOD = registerBlock("stripped_scarlet_wood",
-             () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
++            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.CHERRY_WOOD)));
 -    public static final RegistryObject<Block> SCARLET_LOG_MYSTERIOUS_DOOR = registerBlock("scarlet_log_mysterious_door",
+-            () -> new ScarletLogMysteriousDoorBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
 +    public static final DeferredHolder<?, Block> SCARLET_LOG_MYSTERIOUS_DOOR = registerBlock("scarlet_log_mysterious_door",
-             () -> new ScarletLogMysteriousDoorBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
++            () -> new ScarletLogMysteriousDoorBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD)
                      .mapColor(MapColor.COLOR_PINK).noLootTable()));
 -    public static final RegistryObject<Block> SCARLET_SAPLING = registerBlock("scarlet_sapling",
+-            () -> new DarkWorldSaplingBlock(new ScarletGrower(), BlockBehaviour.Properties.copy(Blocks.CHERRY_SAPLING)
 +    public static final DeferredHolder<?, Block> SCARLET_SAPLING = registerBlock("scarlet_sapling",
-             () -> new DarkWorldSaplingBlock(new ScarletGrower(), BlockBehaviour.Properties.copy(Blocks.CHERRY_SAPLING)
++            () -> new DarkWorldSaplingBlock(ScarletGrower.GROWER, BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_SAPLING)
                      .mapColor(MapColor.COLOR_PINK).sound(SoundType.CHERRY_SAPLING)));
 -    public static final RegistryObject<Block> POTTED_SCARLET_SAPLING = BLOCKS.register("potted_scarlet_sapling",
 +    public static final DeferredHolder<?, Block> POTTED_SCARLET_SAPLING = BLOCKS.register("potted_scarlet_sapling",
              () -> new FlowerPotBlock(() -> ((FlowerPotBlock) Blocks.FLOWER_POT), BlockRegistry.SCARLET_SAPLING,
-                     BlockBehaviour.Properties.copy(Blocks.POTTED_ACACIA_SAPLING).noOcclusion()));
+-                    BlockBehaviour.Properties.copy(Blocks.POTTED_ACACIA_SAPLING).noOcclusion()));
++                    BlockBehaviour.Properties.ofFullCopy(Blocks.POTTED_ACACIA_SAPLING).noOcclusion()));
  
 -    public static final RegistryObject<Block> SCARLET_LADDER = registerBlock("scarlet_ladder",
 +    public static final DeferredHolder<?, Block> SCARLET_LADDER = registerBlock("scarlet_ladder",
@@ -6347,19 +6950,20 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> SCARLET_PLANKS = registerBlock("scarlet_planks", () -> new Block(SCARLET_PROPERTIES));
 +    public static final DeferredHolder<?, Block> SCARLET_STAIRS = registerBlock("scarlet_stairs", () -> new StairBlock(SCARLET_PLANKS.get().defaultBlockState(), SCARLET_PROPERTIES));
 +    public static final DeferredHolder<?, Block> SCARLET_SLAB = registerBlock("scarlet_slab", () -> new SlabBlock(SCARLET_PROPERTIES));
-+    public static final DeferredHolder<?, Block> SCARLET_DOOR = registerBlock("scarlet_door", () -> new DoorBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion(), BlockSetType.CHERRY));
-+    public static final DeferredHolder<?, Block> SCARLET_TRAPDOOR = registerBlock("scarlet_trapdoor", () -> new TrapDoorBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion(), BlockSetType.CHERRY));
++    public static final DeferredHolder<?, Block> SCARLET_DOOR = registerBlock("scarlet_door", () -> new DoorBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion(), BlockSetType.CHERRY));
++    public static final DeferredHolder<?, Block> SCARLET_TRAPDOOR = registerBlock("scarlet_trapdoor", () -> new TrapDoorBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion(), BlockSetType.CHERRY));
 +    public static final DeferredHolder<?, Block> SCARLET_FENCE = registerBlock("scarlet_fence", () -> new FenceBlock(SCARLET_PROPERTIES));
 +    public static final DeferredHolder<?, Block> SCARLET_FENCE_GATE = registerBlock("scarlet_fence_gate", () -> new FenceGateBlock(SCARLET_PROPERTIES, WoodType.CHERRY));
-+    public static final DeferredHolder<?, Block> SCARLET_BUTTON = registerBlock("scarlet_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_PINK).requiresCorrectToolForDrops().noCollission(), BlockSetType.CHERRY, 30, true));
-+    public static final DeferredHolder<?, Block> SCARLET_PRESSURE_PLATE = registerBlock("scarlet_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_PINK).requiresCorrectToolForDrops().noCollission(), BlockSetType.CHERRY));
++    public static final DeferredHolder<?, Block> SCARLET_BUTTON = registerBlock("scarlet_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_PINK).requiresCorrectToolForDrops().noCollission(), BlockSetType.CHERRY, 30, true));
++    public static final DeferredHolder<?, Block> SCARLET_PRESSURE_PLATE = registerBlock("scarlet_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_PINK).requiresCorrectToolForDrops().noCollission(), BlockSetType.CHERRY));
  
  
  
      //Dark candy misc
 -    public static final RegistryObject<Block> DARK_CANDY_BLOCK = registerBlock("dark_candy_block",
+-            () -> new DarkCandyBlock(BlockBehaviour.Properties.copy(Blocks.AZALEA_LEAVES)
 +    public static final DeferredHolder<?, Block> DARK_CANDY_BLOCK = registerBlock("dark_candy_block",
-             () -> new DarkCandyBlock(BlockBehaviour.Properties.copy(Blocks.AZALEA_LEAVES)
++            () -> new DarkCandyBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.AZALEA_LEAVES)
                      .mapColor(MapColor.COLOR_RED).sound(SoundType.AZALEA_LEAVES).noCollission().instabreak().randomTicks()));
 -    public static final RegistryObject<Block> DARK_CANDY_LEAVES = registerBlock("dark_candy_leaves",
 +    public static final DeferredHolder<?, Block> DARK_CANDY_LEAVES = registerBlock("dark_candy_leaves",
@@ -6367,33 +6971,40 @@ index 0d00dbc..b5de767 100644
                      .isSuffocating((state, level, pos) -> false)
                      .isRedstoneConductor((state, level, pos) -> false)));
 -    public static final RegistryObject<Block> FALLEN_DARK_CANDY_LEAVES = BLOCKS.register("fallen_dark_candy_leaves",
+-            () -> new FallenLeafBlock(BlockBehaviour.Properties.copy(Blocks.PINK_PETALS)
 +    public static final DeferredHolder<?, Block> FALLEN_DARK_CANDY_LEAVES = BLOCKS.register("fallen_dark_candy_leaves",
-             () -> new FallenLeafBlock(BlockBehaviour.Properties.copy(Blocks.PINK_PETALS)
++            () -> new FallenLeafBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.PINK_PETALS)
                      .mapColor(MapColor.COLOR_PURPLE).sound(SoundType.PINK_PETALS).noCollission().noOcclusion().instabreak(), 1f));
 -    public static final RegistryObject<Block> DARK_CANDY_LOG = registerBlock("dark_candy_log",
+-            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
 +    public static final DeferredHolder<?, Block> DARK_CANDY_LOG = registerBlock("dark_candy_log",
-             () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
++            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD)
                      .mapColor(MapColor.COLOR_PURPLE).sound(SoundType.CHERRY_WOOD)));
 -    public static final RegistryObject<Block> DARK_CANDY_WOOD = registerBlock("dark_candy_wood",
+-            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
 +    public static final DeferredHolder<?, Block> DARK_CANDY_WOOD = registerBlock("dark_candy_wood",
-             () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
++            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD)
                      .mapColor(MapColor.COLOR_PURPLE).sound(SoundType.CHERRY_WOOD)));
 -    public static final RegistryObject<Block> STRIPPED_DARK_CANDY_WOOD = registerBlock("stripped_dark_candy_wood",
+-            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
 +    public static final DeferredHolder<?, Block> STRIPPED_DARK_CANDY_WOOD = registerBlock("stripped_dark_candy_wood",
-             () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
++            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD)
                      .mapColor(MapColor.COLOR_PURPLE).sound(SoundType.CHERRY_WOOD)));
 -    public static final RegistryObject<Block> STRIPPED_DARK_CANDY_LOG = registerBlock("stripped_dark_candy_log",
+-            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
 +    public static final DeferredHolder<?, Block> STRIPPED_DARK_CANDY_LOG = registerBlock("stripped_dark_candy_log",
-             () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD)
++            () -> new RotatedPillarWoodBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD)
                      .mapColor(MapColor.COLOR_PURPLE).sound(SoundType.CHERRY_WOOD)));
 -    public static final RegistryObject<Block>DARK_CANDY_SAPLING = registerBlock("dark_candy_sapling",
+-            () -> new DarkWorldSaplingBlock(new DarkCandyGrower(), BlockBehaviour.Properties.copy(Blocks.CHERRY_SAPLING)
 +    public static final DeferredHolder<?, Block>DARK_CANDY_SAPLING = registerBlock("dark_candy_sapling",
-             () -> new DarkWorldSaplingBlock(new DarkCandyGrower(), BlockBehaviour.Properties.copy(Blocks.CHERRY_SAPLING)
++            () -> new DarkWorldSaplingBlock(DarkCandyGrower.GROWER, BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_SAPLING)
                      .mapColor(MapColor.COLOR_PURPLE).sound(SoundType.CHERRY_SAPLING)));
 -    public static final RegistryObject<Block> POTTED_DARK_CANDY_SAPLING = BLOCKS.register("potted_dark_candy_sapling",
 +    public static final DeferredHolder<?, Block> POTTED_DARK_CANDY_SAPLING = BLOCKS.register("potted_dark_candy_sapling",
              () -> new FlowerPotBlock(() -> ((FlowerPotBlock) Blocks.FLOWER_POT), BlockRegistry.DARK_CANDY_SAPLING,
-                     BlockBehaviour.Properties.copy(Blocks.POTTED_ACACIA_SAPLING).noOcclusion()));
+-                    BlockBehaviour.Properties.copy(Blocks.POTTED_ACACIA_SAPLING).noOcclusion()));
++                    BlockBehaviour.Properties.ofFullCopy(Blocks.POTTED_ACACIA_SAPLING).noOcclusion()));
  
 -    public static final RegistryObject<Block> DARK_CANDY_CRAFTING_TABLE = registerBlock("dark_candy_crafting_table",
 +    public static final DeferredHolder<?, Block> DARK_CANDY_CRAFTING_TABLE = registerBlock("dark_candy_crafting_table",
@@ -6415,12 +7026,12 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> DARK_CANDY_PLANKS = registerBlock("dark_candy_planks", () -> new Block(DARK_CANDY_PROPERTIES));
 +    public static final DeferredHolder<?, Block> DARK_CANDY_STAIRS = registerBlock("dark_candy_stairs", () -> new StairBlock(DARK_CANDY_PLANKS.get().defaultBlockState(), DARK_CANDY_PROPERTIES));
 +    public static final DeferredHolder<?, Block> DARK_CANDY_SLAB = registerBlock("dark_candy_slab", () -> new SlabBlock(DARK_CANDY_PROPERTIES));
-+    public static final DeferredHolder<?, Block> DARK_CANDY_DOOR = registerBlock("dark_candy_door", () -> new DoorBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion(), BlockSetType.CHERRY));
-+    public static final DeferredHolder<?, Block> DARK_CANDY_TRAPDOOR = registerBlock("dark_candy_trapdoor", () -> new TrapDoorBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion(), BlockSetType.CHERRY));
++    public static final DeferredHolder<?, Block> DARK_CANDY_DOOR = registerBlock("dark_candy_door", () -> new DoorBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion(), BlockSetType.CHERRY));
++    public static final DeferredHolder<?, Block> DARK_CANDY_TRAPDOOR = registerBlock("dark_candy_trapdoor", () -> new TrapDoorBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion(), BlockSetType.CHERRY));
 +    public static final DeferredHolder<?, Block> DARK_CANDY_FENCE = registerBlock("dark_candy_fence", () -> new FenceBlock(DARK_CANDY_PROPERTIES));
 +    public static final DeferredHolder<?, Block> DARK_CANDY_FENCE_GATE = registerBlock("dark_candy_fence_gate", () -> new FenceGateBlock(DARK_CANDY_PROPERTIES, WoodType.CHERRY));
-+    public static final DeferredHolder<?, Block> DARK_CANDY_BUTTON = registerBlock("dark_candy_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), BlockSetType.CHERRY, 30, true));
-+    public static final DeferredHolder<?, Block> DARK_CANDY_PRESSURE_PLATE = registerBlock("dark_candy_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), BlockSetType.CHERRY));
++    public static final DeferredHolder<?, Block> DARK_CANDY_BUTTON = registerBlock("dark_candy_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), BlockSetType.CHERRY, 30, true));
++    public static final DeferredHolder<?, Block> DARK_CANDY_PRESSURE_PLATE = registerBlock("dark_candy_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CHERRY_WOOD).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), BlockSetType.CHERRY));
  
  
  
@@ -6441,8 +7052,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> POLISHED_SCARLET_MARBLE_STAIRS = registerBlock("polished_scarlet_marble_stairs", () -> new StairBlock(BlockRegistry.POLISHED_SCARLET_MARBLE.get().defaultBlockState(), SCARLET_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_SCARLET_MARBLE_SLAB = registerBlock("polished_scarlet_marble_slab", () -> new SlabBlock(SCARLET_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_SCARLET_MARBLE_WALL = registerBlock("polished_scarlet_marble_wall", () -> new WallBlock(SCARLET_MARBLE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> POLISHED_SCARLET_MARBLE_BUTTON = registerBlock("polished_scarlet_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> POLISHED_SCARLET_MARBLE_PRESSURE_PLATE = registerBlock("polished_scarlet_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET));
++    public static final DeferredHolder<?, Block> POLISHED_SCARLET_MARBLE_BUTTON = registerBlock("polished_scarlet_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> POLISHED_SCARLET_MARBLE_PRESSURE_PLATE = registerBlock("polished_scarlet_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET));
  
      //Scarlet marble bricks
 -    public static final RegistryObject<Block> SCARLET_MARBLE_BRICKS = registerBlock("scarlet_marble_bricks", () -> new Block(SCARLET_MARBLE_PROPERTIES));
@@ -6455,8 +7066,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> SCARLET_MARBLE_BRICK_STAIRS = registerBlock("scarlet_marble_brick_stairs", () -> new StairBlock(BlockRegistry.SCARLET_MARBLE_BRICKS.get().defaultBlockState(), SCARLET_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> SCARLET_MARBLE_BRICK_SLAB = registerBlock("scarlet_marble_brick_slab", () -> new SlabBlock(SCARLET_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> SCARLET_MARBLE_BRICK_WALL = registerBlock("scarlet_marble_brick_wall", () -> new WallBlock(SCARLET_MARBLE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> SCARLET_MARBLE_BRICK_BUTTON = registerBlock("scarlet_marble_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> SCARLET_MARBLE_BRICK_PRESSURE_PLATE = registerBlock("scarlet_marble_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET));
++    public static final DeferredHolder<?, Block> SCARLET_MARBLE_BRICK_BUTTON = registerBlock("scarlet_marble_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> SCARLET_MARBLE_BRICK_PRESSURE_PLATE = registerBlock("scarlet_marble_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET));
  
      //Scarlet marble
 -    public static final RegistryObject<Block> SCARLET_MARBLE = registerBlock("scarlet_marble", () -> new Block(SCARLET_MARBLE_PROPERTIES));
@@ -6469,8 +7080,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> SCARLET_MARBLE_STAIRS = registerBlock("scarlet_marble_stairs", () -> new StairBlock(BlockRegistry.SCARLET_MARBLE.get().defaultBlockState(), SCARLET_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> SCARLET_MARBLE_SLAB = registerBlock("scarlet_marble_slab", () -> new SlabBlock(SCARLET_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> SCARLET_MARBLE_WALL = registerBlock("scarlet_marble_wall", () -> new WallBlock(SCARLET_MARBLE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> SCARLET_MARBLE_BUTTON = registerBlock("scarlet_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> SCARLET_MARBLE_PRESSURE_PLATE = registerBlock("scarlet_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET));
++    public static final DeferredHolder<?, Block> SCARLET_MARBLE_BUTTON = registerBlock("scarlet_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> SCARLET_MARBLE_PRESSURE_PLATE = registerBlock("scarlet_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET));
  
      //Cobbled scarlet marble
 -    public static final RegistryObject<Block> COBBLED_SCARLET_MARBLE = registerBlock("cobbled_scarlet_marble", () -> new Block(SCARLET_MARBLE_PROPERTIES));
@@ -6483,8 +7094,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> COBBLED_SCARLET_MARBLE_STAIRS = registerBlock("cobbled_scarlet_marble_stairs", () -> new StairBlock(BlockRegistry.COBBLED_SCARLET_MARBLE.get().defaultBlockState(), SCARLET_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_SCARLET_MARBLE_SLAB = registerBlock("cobbled_scarlet_marble_slab", () -> new SlabBlock(SCARLET_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_SCARLET_MARBLE_WALL = registerBlock("cobbled_scarlet_marble_wall", () -> new WallBlock(SCARLET_MARBLE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> COBBLED_SCARLET_MARBLE_BUTTON = registerBlock("cobbled_scarlet_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> COBBLED_SCARLET_MARBLE_PRESSURE_PLATE = registerBlock("cobbled_scarlet_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET));
++    public static final DeferredHolder<?, Block> COBBLED_SCARLET_MARBLE_BUTTON = registerBlock("cobbled_scarlet_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> COBBLED_SCARLET_MARBLE_PRESSURE_PLATE = registerBlock("cobbled_scarlet_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noCollission(), SCARLET_MARBLE_BLOCKSET));
  
      //Scarlet marble chess
 -    public static final RegistryObject<Block> SCARLET_MARBLE_PAWN = registerBlock("scarlet_marble_pawn", () -> new ChessPawnBlock(SCARLET_MARBLE_PROPERTIES));
@@ -6519,8 +7130,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> POLISHED_DARK_MARBLE_STAIRS = registerBlock("polished_dark_marble_stairs", () -> new StairBlock(BlockRegistry.POLISHED_DARK_MARBLE.get().defaultBlockState(), DARK_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_DARK_MARBLE_SLAB = registerBlock("polished_dark_marble_slab", () -> new SlabBlock(DARK_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_DARK_MARBLE_WALL = registerBlock("polished_dark_marble_wall", () -> new WallBlock(DARK_MARBLE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> POLISHED_DARK_MARBLE_BUTTON = registerBlock("polished_dark_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noCollission(), DARK_MARBLE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> POLISHED_DARK_MARBLE_PRESSURE_PLATE = registerBlock("polished_dark_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noCollission(), DARK_MARBLE_BLOCKSET));
++    public static final DeferredHolder<?, Block> POLISHED_DARK_MARBLE_BUTTON = registerBlock("polished_dark_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noCollission(), DARK_MARBLE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> POLISHED_DARK_MARBLE_PRESSURE_PLATE = registerBlock("polished_dark_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noCollission(), DARK_MARBLE_BLOCKSET));
  
      //Dark marble bricks
 -    public static final RegistryObject<Block> DARK_MARBLE_BRICKS = registerBlock("dark_marble_bricks", () -> new Block(DARK_MARBLE_PROPERTIES));
@@ -6533,8 +7144,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> DARK_MARBLE_BRICK_STAIRS = registerBlock("dark_marble_brick_stairs", () -> new StairBlock(BlockRegistry.DARK_MARBLE_BRICKS.get().defaultBlockState(), DARK_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> DARK_MARBLE_BRICK_SLAB = registerBlock("dark_marble_brick_slab", () -> new SlabBlock(DARK_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> DARK_MARBLE_BRICK_WALL = registerBlock("dark_marble_brick_wall", () -> new WallBlock(DARK_MARBLE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> DARK_MARBLE_BRICK_BUTTON = registerBlock("dark_marble_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noCollission(), DARK_MARBLE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> DARK_MARBLE_BRICK_PRESSURE_PLATE = registerBlock("dark_marble_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noCollission(), DARK_MARBLE_BLOCKSET));
++    public static final DeferredHolder<?, Block> DARK_MARBLE_BRICK_BUTTON = registerBlock("dark_marble_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noCollission(), DARK_MARBLE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> DARK_MARBLE_BRICK_PRESSURE_PLATE = registerBlock("dark_marble_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noCollission(), DARK_MARBLE_BLOCKSET));
  
      //Dark marble
 -    public static final RegistryObject<Block> DARK_MARBLE = registerBlock("dark_marble", () -> new Block(DARK_MARBLE_PROPERTIES));
@@ -6547,8 +7158,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> DARK_MARBLE_STAIRS = registerBlock("dark_marble_stairs", () -> new StairBlock(BlockRegistry.DARK_MARBLE.get().defaultBlockState(), DARK_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> DARK_MARBLE_SLAB = registerBlock("dark_marble_slab", () -> new SlabBlock(DARK_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> DARK_MARBLE_WALL = registerBlock("dark_marble_wall", () -> new WallBlock(DARK_MARBLE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> DARK_MARBLE_BUTTON = registerBlock("dark_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).noCollission(), DARK_MARBLE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> DARK_MARBLE_PRESSURE_PLATE = registerBlock("dark_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).noCollission(), DARK_MARBLE_BLOCKSET));
++    public static final DeferredHolder<?, Block> DARK_MARBLE_BUTTON = registerBlock("dark_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).noCollission(), DARK_MARBLE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> DARK_MARBLE_PRESSURE_PLATE = registerBlock("dark_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).noCollission(), DARK_MARBLE_BLOCKSET));
  
      //Cobbled dark marble
 -    public static final RegistryObject<Block> COBBLED_DARK_MARBLE = registerBlock("cobbled_dark_marble", () -> new Block(DARK_MARBLE_PROPERTIES));
@@ -6561,8 +7172,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> COBBLED_DARK_MARBLE_STAIRS = registerBlock("cobbled_dark_marble_stairs", () -> new StairBlock(BlockRegistry.COBBLED_DARK_MARBLE.get().defaultBlockState(), DARK_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_DARK_MARBLE_SLAB = registerBlock("cobbled_dark_marble_slab", () -> new SlabBlock(DARK_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_DARK_MARBLE_WALL = registerBlock("cobbled_dark_marble_wall", () -> new WallBlock(DARK_MARBLE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> COBBLED_DARK_MARBLE_BUTTON = registerBlock("cobbled_dark_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).noCollission(), DARK_MARBLE_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> COBBLED_DARK_MARBLE_PRESSURE_PLATE = registerBlock("cobbled_dark_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).noCollission(), DARK_MARBLE_BLOCKSET));
++    public static final DeferredHolder<?, Block> COBBLED_DARK_MARBLE_BUTTON = registerBlock("cobbled_dark_marble_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).noCollission(), DARK_MARBLE_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> COBBLED_DARK_MARBLE_PRESSURE_PLATE = registerBlock("cobbled_dark_marble_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).noCollission(), DARK_MARBLE_BLOCKSET));
  
      //Dark marble chess
 -    public static final RegistryObject<Block> DARK_MARBLE_PAWN = registerBlock("dark_marble_pawn", () -> new ChessPawnBlock(DARK_MARBLE_PROPERTIES));
@@ -6599,22 +7210,22 @@ index 0d00dbc..b5de767 100644
 -    public static final RegistryObject<Block> ICHOR_CANDLE = BLOCKS.register("ichor_candle", () -> new IchorCandleBlock(BlockBehaviour.Properties.copy(Blocks.CANDLE).mapColor(MapColor.COLOR_BLACK).sound(SoundType.LANTERN).lightLevel(state -> state.getValue(LIT) ? 12 : 0)));
 -    public static final RegistryObject<Block> ICHOR_FIRE = BLOCKS.register("ichor_fire", () -> new IchorFireBlock(BlockBehaviour.Properties.copy(Blocks.SOUL_FIRE).mapColor(MapColor.COLOR_LIGHT_BLUE).lightLevel(state -> 12)));
 +    public static final DeferredHolder<?, Block> CLIFFROCK_PATH = registerBlock("cliffrock_path", () -> new Block(CLIFFROCK_PROPERTIES));
-+    public static final DeferredHolder<?, Block> CLIFFROCK_SLIDE = registerBlock("cliffrock_slide", () -> new CliffrockSlideBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noOcclusion()));
++    public static final DeferredHolder<?, Block> CLIFFROCK_SLIDE = registerBlock("cliffrock_slide", () -> new CliffrockSlideBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noOcclusion()));
 +    public static final DeferredHolder<?, Block> CLIFFROCK_PILLAR = registerBlock("cliffrock_pillar", () -> new RotatedPillarBlock(CLIFFROCK_PROPERTIES));
 +    public static final DeferredHolder<?, Block> CHISELED_CLIFFROCK = registerBlock("chiseled_cliffrock", () -> new Block(CLIFFROCK_PROPERTIES));
-+    public static final DeferredHolder<?, Block> DUST_BLOCK = registerBlock("dust_block", () -> new DustBlock(BlockBehaviour.Properties.copy(Blocks.BLACK_WOOL).mapColor(MapColor.COLOR_LIGHT_GRAY).sound(SoundTypeRegistry.DUST).noOcclusion().instabreak().noCollission()));
-+    public static final DeferredHolder<?, Block> DUST_BLOCK_GHOST = BLOCKS.register("dust_block_ghost", () -> new Block(BlockBehaviour.Properties.copy(Blocks.BLACK_WOOL).mapColor(MapColor.COLOR_LIGHT_GRAY).sound(SoundTypeRegistry.DUST).noOcclusion().instabreak().noCollission()));
++    public static final DeferredHolder<?, Block> DUST_BLOCK = registerBlock("dust_block", () -> new DustBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.BLACK_WOOL).mapColor(MapColor.COLOR_LIGHT_GRAY).sound(SoundTypeRegistry.DUST).noOcclusion().instabreak().noCollission()));
++    public static final DeferredHolder<?, Block> DUST_BLOCK_GHOST = BLOCKS.register("dust_block_ghost", () -> new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.BLACK_WOOL).mapColor(MapColor.COLOR_LIGHT_GRAY).sound(SoundTypeRegistry.DUST).noOcclusion().instabreak().noCollission()));
 +
 +    public static final DeferredHolder<?, Block> CLIFFROCK_EYE = registerBlock("cliffrock_eye", () -> new GenericHorizontalOrientableBlock(CLIFFROCK_PROPERTIES));
-+    public static final DeferredHolder<?, Block> WEEPING_EYE = registerBlock("weeping_eye", () -> new WeepingEyeBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().sound(SoundType.HONEY_BLOCK).randomTicks()));
-+    public static final DeferredHolder<?, Block> LEAKING_ICHOR = registerBlock("leaking_ichor", () -> new LeakingIchorBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().sound(SoundType.HONEY_BLOCK)));
-+    public static final DeferredHolder<?, Block> ICHOR_PUDDLE = BLOCKS.register("ichor_puddle", () -> new ScalableHorizontalPlaneBlock(BlockBehaviour.Properties.copy(Blocks.HONEY_BLOCK).mapColor(MapColor.COLOR_BLACK).sound(SoundType.HONEY_BLOCK).noOcclusion().instabreak(), 2f));
-+    public static final DeferredHolder<?, Block> ICHOR_BLOCK = BLOCKS.register("ichor_block", () -> new Block(BlockBehaviour.Properties.copy(Blocks.HONEY_BLOCK).mapColor(MapColor.COLOR_BLACK).sound(SoundType.HONEY_BLOCK)));
-+    public static final DeferredHolder<?, Block> ICHOR_TORCH = BLOCKS.register("ichor_torch", () -> new TorchBlock(BlockBehaviour.Properties.copy(Blocks.TORCH).mapColor(MapColor.COLOR_CYAN).lightLevel(state -> 8), ParticleTypes.SOUL_FIRE_FLAME));
-+    public static final DeferredHolder<?, Block> ICHOR_WALL_TORCH = BLOCKS.register("ichor_wall_torch", () -> new WallTorchBlock(BlockBehaviour.Properties.copy(Blocks.WALL_TORCH).mapColor(MapColor.COLOR_CYAN).lightLevel(state -> 8), ParticleTypes.SOUL_FIRE_FLAME));
-+    public static final DeferredHolder<?, Block> ICHOR_LANTERN = registerBlock("ichor_lantern", () -> new LanternBlock(BlockBehaviour.Properties.copy(Blocks.SOUL_LANTERN).mapColor(MapColor.COLOR_CYAN).lightLevel(state -> 12)));
-+    public static final DeferredHolder<?, Block> ICHOR_CANDLE = BLOCKS.register("ichor_candle", () -> new IchorCandleBlock(BlockBehaviour.Properties.copy(Blocks.CANDLE).mapColor(MapColor.COLOR_BLACK).sound(SoundType.LANTERN).lightLevel(state -> state.getValue(LIT) ? 12 : 0)));
-+    public static final DeferredHolder<?, Block> ICHOR_FIRE = BLOCKS.register("ichor_fire", () -> new IchorFireBlock(BlockBehaviour.Properties.copy(Blocks.SOUL_FIRE).mapColor(MapColor.COLOR_LIGHT_BLUE).lightLevel(state -> 12)));
++    public static final DeferredHolder<?, Block> WEEPING_EYE = registerBlock("weeping_eye", () -> new WeepingEyeBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().sound(SoundType.HONEY_BLOCK).randomTicks()));
++    public static final DeferredHolder<?, Block> LEAKING_ICHOR = registerBlock("leaking_ichor", () -> new LeakingIchorBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().sound(SoundType.HONEY_BLOCK)));
++    public static final DeferredHolder<?, Block> ICHOR_PUDDLE = BLOCKS.register("ichor_puddle", () -> new ScalableHorizontalPlaneBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.HONEY_BLOCK).mapColor(MapColor.COLOR_BLACK).sound(SoundType.HONEY_BLOCK).noOcclusion().instabreak(), 2f));
++    public static final DeferredHolder<?, Block> ICHOR_BLOCK = BLOCKS.register("ichor_block", () -> new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.HONEY_BLOCK).mapColor(MapColor.COLOR_BLACK).sound(SoundType.HONEY_BLOCK)));
++    public static final DeferredHolder<?, Block> ICHOR_TORCH = BLOCKS.register("ichor_torch", () -> new TorchBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.TORCH).mapColor(MapColor.COLOR_CYAN).lightLevel(state -> 8), ParticleTypes.SOUL_FIRE_FLAME));
++    public static final DeferredHolder<?, Block> ICHOR_WALL_TORCH = BLOCKS.register("ichor_wall_torch", () -> new WallTorchBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.WALL_TORCH).mapColor(MapColor.COLOR_CYAN).lightLevel(state -> 8), ParticleTypes.SOUL_FIRE_FLAME));
++    public static final DeferredHolder<?, Block> ICHOR_LANTERN = registerBlock("ichor_lantern", () -> new LanternBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.SOUL_LANTERN).mapColor(MapColor.COLOR_CYAN).lightLevel(state -> 12)));
++    public static final DeferredHolder<?, Block> ICHOR_CANDLE = BLOCKS.register("ichor_candle", () -> new IchorCandleBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CANDLE).mapColor(MapColor.COLOR_BLACK).sound(SoundType.LANTERN).lightLevel(state -> state.getValue(LIT) ? 12 : 0)));
++    public static final DeferredHolder<?, Block> ICHOR_FIRE = BLOCKS.register("ichor_fire", () -> new IchorFireBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.SOUL_FIRE).mapColor(MapColor.COLOR_LIGHT_BLUE).lightLevel(state -> 12)));
  
      //Polished cliffrock
 -    public static final RegistryObject<Block> POLISHED_CLIFFROCK = registerBlock("polished_cliffrock", () -> new Block(CLIFFROCK_PROPERTIES));
@@ -6627,8 +7238,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> POLISHED_CLIFFROCK_STAIRS = registerBlock("polished_cliffrock_stairs", () -> new StairBlock(BlockRegistry.POLISHED_CLIFFROCK.get().defaultBlockState(), CLIFFROCK_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_CLIFFROCK_SLAB = registerBlock("polished_cliffrock_slab", () -> new SlabBlock(CLIFFROCK_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_CLIFFROCK_WALL = registerBlock("polished_cliffrock_wall", () -> new WallBlock(CLIFFROCK_PROPERTIES));
-+    public static final DeferredHolder<?, Block> POLISHED_CLIFFROCK_BUTTON = registerBlock("polished_cliffrock_button", () -> new CliffrockButtonBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noCollission(), 30, false));
-+    public static final DeferredHolder<?, Block> POLISHED_CLIFFROCK_PRESSURE_PLATE = registerBlock("polished_cliffrock_pressure_plate", () -> new GenericPressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().noCollission(), SoundTypeRegistry.CLIFF, SoundRegistry.CLIFFROCK_PRESS.get(), SoundRegistry.CLIFFROCK_UNPRESS.get()));
++    public static final DeferredHolder<?, Block> POLISHED_CLIFFROCK_BUTTON = registerBlock("polished_cliffrock_button", () -> new CliffrockButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noCollission(), 30, false));
++    public static final DeferredHolder<?, Block> POLISHED_CLIFFROCK_PRESSURE_PLATE = registerBlock("polished_cliffrock_pressure_plate", () -> new GenericPressurePlateBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().noCollission(), SoundTypeRegistry.CLIFF, SoundRegistry.CLIFFROCK_PRESS.get(), SoundRegistry.CLIFFROCK_UNPRESS.get()));
  
      //Cliffrock bricks
 -    public static final RegistryObject<Block> CLIFFROCK_BRICKS = registerBlock("cliffrock_bricks", () -> new Block(CLIFFROCK_PROPERTIES));
@@ -6641,8 +7252,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> CLIFFROCK_BRICK_STAIRS = registerBlock("cliffrock_brick_stairs", () -> new StairBlock(BlockRegistry.CLIFFROCK_BRICKS.get().defaultBlockState(), CLIFFROCK_PROPERTIES));
 +    public static final DeferredHolder<?, Block> CLIFFROCK_BRICK_SLAB = registerBlock("cliffrock_brick_slab", () -> new SlabBlock(CLIFFROCK_PROPERTIES));
 +    public static final DeferredHolder<?, Block> CLIFFROCK_BRICK_WALL = registerBlock("cliffrock_brick_wall", () -> new WallBlock(CLIFFROCK_PROPERTIES));
-+    public static final DeferredHolder<?, Block> CLIFFROCK_BRICK_BUTTON = registerBlock("cliffrock_brick_button", () -> new CliffrockButtonBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noCollission(), 30, false));
-+    public static final DeferredHolder<?, Block> CLIFFROCK_BRICK_PRESSURE_PLATE = registerBlock("cliffrock_brick_pressure_plate", () -> new GenericPressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().noCollission(), SoundTypeRegistry.CLIFF, SoundRegistry.CLIFFROCK_PRESS.get(), SoundRegistry.CLIFFROCK_UNPRESS.get()));
++    public static final DeferredHolder<?, Block> CLIFFROCK_BRICK_BUTTON = registerBlock("cliffrock_brick_button", () -> new CliffrockButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noCollission(), 30, false));
++    public static final DeferredHolder<?, Block> CLIFFROCK_BRICK_PRESSURE_PLATE = registerBlock("cliffrock_brick_pressure_plate", () -> new GenericPressurePlateBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().noCollission(), SoundTypeRegistry.CLIFF, SoundRegistry.CLIFFROCK_PRESS.get(), SoundRegistry.CLIFFROCK_UNPRESS.get()));
  
      //Cliffrock
 -    public static final RegistryObject<Block> CLIFFROCK = registerBlock("cliffrock", () -> new PathableBlock(CLIFFROCK_PROPERTIES, BlockRegistry.CLIFFROCK_PATH.get()));
@@ -6655,8 +7266,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> CLIFFROCK_STAIRS = registerBlock("cliffrock_stairs", () -> new StairBlock(BlockRegistry.CLIFFROCK.get().defaultBlockState(), CLIFFROCK_PROPERTIES));
 +    public static final DeferredHolder<?, Block> CLIFFROCK_SLAB = registerBlock("cliffrock_slab", () -> new SlabBlock(CLIFFROCK_PROPERTIES));
 +    public static final DeferredHolder<?, Block> CLIFFROCK_WALL = registerBlock("cliffrock_wall", () -> new WallBlock(CLIFFROCK_PROPERTIES));
-+    public static final DeferredHolder<?, Block> CLIFFROCK_BUTTON = registerBlock("cliffrock_button", () -> new CliffrockButtonBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noCollission(), 30, false));
-+    public static final DeferredHolder<?, Block> CLIFFROCK_PRESSURE_PLATE = registerBlock("cliffrock_pressure_plate", () -> new GenericPressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().noCollission(), SoundTypeRegistry.CLIFF, SoundRegistry.CLIFFROCK_PRESS.get(), SoundRegistry.CLIFFROCK_UNPRESS.get()));
++    public static final DeferredHolder<?, Block> CLIFFROCK_BUTTON = registerBlock("cliffrock_button", () -> new CliffrockButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noCollission(), 30, false));
++    public static final DeferredHolder<?, Block> CLIFFROCK_PRESSURE_PLATE = registerBlock("cliffrock_pressure_plate", () -> new GenericPressurePlateBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().noCollission(), SoundTypeRegistry.CLIFF, SoundRegistry.CLIFFROCK_PRESS.get(), SoundRegistry.CLIFFROCK_UNPRESS.get()));
  
      //Cobbled cliffrock
 -    public static final RegistryObject<Block> COBBLED_CLIFFROCK = registerBlock("cobbled_cliffrock", () -> new Block(CLIFFROCK_PROPERTIES));
@@ -6669,8 +7280,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> COBBLED_CLIFFROCK_STAIRS = registerBlock("cobbled_cliffrock_stairs", () -> new StairBlock(BlockRegistry.COBBLED_CLIFFROCK.get().defaultBlockState(), CLIFFROCK_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_CLIFFROCK_SLAB = registerBlock("cobbled_cliffrock_slab", () -> new SlabBlock(CLIFFROCK_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_CLIFFROCK_WALL = registerBlock("cobbled_cliffrock_wall", () -> new WallBlock(CLIFFROCK_PROPERTIES));
-+    public static final DeferredHolder<?, Block> COBBLED_CLIFFROCK_BUTTON = registerBlock("cobbled_cliffrock_button", () -> new CliffrockButtonBlock(BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noCollission(), 30, false));
-+    public static final DeferredHolder<?, Block> COBBLED_CLIFFROCK_PRESSURE_PLATE = registerBlock("cobbled_cliffrock_pressure_plate", () -> new GenericPressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().noCollission(), SoundTypeRegistry.CLIFF, SoundRegistry.CLIFFROCK_PRESS.get(), SoundRegistry.CLIFFROCK_UNPRESS.get()));
++    public static final DeferredHolder<?, Block> COBBLED_CLIFFROCK_BUTTON = registerBlock("cobbled_cliffrock_button", () -> new CliffrockButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().sound(SoundTypeRegistry.CLIFF).noCollission(), 30, false));
++    public static final DeferredHolder<?, Block> COBBLED_CLIFFROCK_PRESSURE_PLATE = registerBlock("cobbled_cliffrock_pressure_plate", () -> new GenericPressurePlateBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.STONE).mapColor(MapColor.COLOR_LIGHT_GRAY).requiresCorrectToolForDrops().noCollission(), SoundTypeRegistry.CLIFF, SoundRegistry.CLIFFROCK_PRESS.get(), SoundRegistry.CLIFFROCK_UNPRESS.get()));
  
  
  
@@ -6683,7 +7294,7 @@ index 0d00dbc..b5de767 100644
 -    public static final RegistryObject<Block> DARK_GEYSER = registerBlock("dark_geyser", () -> new DarkGeyserBlock(TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> TENEBRALITH_SPIKE = registerBlock("tenebralith_spike", () -> new TenebralithSpikeBlock(TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> TENEBRALITH_PATH = registerBlock("tenebralith_path", () -> new Block(TENEBRALITH_PROPERTIES));
-+    public static final DeferredHolder<?, Block> DARK_SAND = registerBlock("dark_sand", () -> new FallingBlock(BlockBehaviour.Properties.copy(Blocks.SAND).mapColor(DyeColor.BLACK).sound(SoundType.SOUL_SAND).requiresCorrectToolForDrops()));
++    public static final DeferredHolder<?, Block> DARK_SAND = registerBlock("dark_sand", () -> new FallingBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.SAND).mapColor(DyeColor.BLACK).sound(SoundType.SOUL_SAND).requiresCorrectToolForDrops()));
 +    public static final DeferredHolder<?, Block> TENEBRALITH_PILLAR = registerBlock("tenebralith_pillar", () -> new RotatedPillarBlock(TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> CHISELED_TENEBRALITH = registerBlock("chiseled_tenebralith", () -> new Block(TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> DARK_GEYSER = registerBlock("dark_geyser", () -> new DarkGeyserBlock(TENEBRALITH_PROPERTIES));
@@ -6699,8 +7310,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> POLISHED_TENEBRALITH_STAIRS = registerBlock("polished_tenebralith_stairs", () -> new StairBlock(BlockRegistry.POLISHED_TENEBRALITH.get().defaultBlockState(), TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_TENEBRALITH_SLAB = registerBlock("polished_tenebralith_slab", () -> new SlabBlock(TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> POLISHED_TENEBRALITH_WALL = registerBlock("polished_tenebralith_wall", () -> new WallBlock(TENEBRALITH_PROPERTIES));
-+    public static final DeferredHolder<?, Block> POLISHED_TENEBRALITH_BUTTON = registerBlock("polished_tenebralith_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().noCollission(), TENEBRALITH_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> POLISHED_TENEBRALITH_PRESSURE_PLATE = registerBlock("polished_tenebralith_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().noCollission(), TENEBRALITH_BLOCKSET));
++    public static final DeferredHolder<?, Block> POLISHED_TENEBRALITH_BUTTON = registerBlock("polished_tenebralith_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().noCollission(), TENEBRALITH_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> POLISHED_TENEBRALITH_PRESSURE_PLATE = registerBlock("polished_tenebralith_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().noCollission(), TENEBRALITH_BLOCKSET));
  
      //Tenebralith bricks
 -    public static final RegistryObject<Block> TENEBRALITH_BRICKS = registerBlock("tenebralith_bricks", () -> new Block(TENEBRALITH_PROPERTIES));
@@ -6713,8 +7324,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> TENEBRALITH_BRICK_STAIRS = registerBlock("tenebralith_brick_stairs", () -> new StairBlock(BlockRegistry.TENEBRALITH_BRICKS.get().defaultBlockState(), TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> TENEBRALITH_BRICK_SLAB = registerBlock("tenebralith_brick_slab", () -> new SlabBlock(TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> TENEBRALITH_BRICK_WALL = registerBlock("tenebralith_brick_wall", () -> new WallBlock(TENEBRALITH_PROPERTIES));
-+    public static final DeferredHolder<?, Block> TENEBRALITH_BRICK_BUTTON = registerBlock("tenebralith_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().noCollission(), TENEBRALITH_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> TENEBRALITH_BRICK_PRESSURE_PLATE = registerBlock("tenebralith_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().noCollission(), TENEBRALITH_BLOCKSET));
++    public static final DeferredHolder<?, Block> TENEBRALITH_BRICK_BUTTON = registerBlock("tenebralith_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().noCollission(), TENEBRALITH_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> TENEBRALITH_BRICK_PRESSURE_PLATE = registerBlock("tenebralith_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).requiresCorrectToolForDrops().noCollission(), TENEBRALITH_BLOCKSET));
  
      //Tenebralith
 -    public static final RegistryObject<Block> TENEBRALITH = registerBlock("tenebralith", () -> new PathableBlock(TENEBRALITH_PROPERTIES, BlockRegistry.TENEBRALITH_PATH.get()));
@@ -6727,8 +7338,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> TENEBRALITH_STAIRS = registerBlock("tenebralith_stairs", () -> new StairBlock(BlockRegistry.TENEBRALITH.get().defaultBlockState(), TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> TENEBRALITH_SLAB = registerBlock("tenebralith_slab", () -> new SlabBlock(TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> TENEBRALITH_WALL = registerBlock("tenebralith_wall", () -> new WallBlock(TENEBRALITH_PROPERTIES));
-+    public static final DeferredHolder<?, Block> TENEBRALITH_BUTTON = registerBlock("tenebralith_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).noCollission(), TENEBRALITH_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> TENEBRALITH_PRESSURE_PLATE = registerBlock("tenebralith_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).noCollission(), TENEBRALITH_BLOCKSET));
++    public static final DeferredHolder<?, Block> TENEBRALITH_BUTTON = registerBlock("tenebralith_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).noCollission(), TENEBRALITH_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> TENEBRALITH_PRESSURE_PLATE = registerBlock("tenebralith_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).noCollission(), TENEBRALITH_BLOCKSET));
  
      //Cobbled tenebralith
 -    public static final RegistryObject<Block> COBBLED_TENEBRALITH = registerBlock("cobbled_tenebralith", () -> new Block(TENEBRALITH_PROPERTIES));
@@ -6741,8 +7352,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> COBBLED_TENEBRALITH_STAIRS = registerBlock("cobbled_tenebralith_stairs", () -> new StairBlock(BlockRegistry.COBBLED_TENEBRALITH.get().defaultBlockState(), TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_TENEBRALITH_SLAB = registerBlock("cobbled_tenebralith_slab", () -> new SlabBlock(TENEBRALITH_PROPERTIES));
 +    public static final DeferredHolder<?, Block> COBBLED_TENEBRALITH_WALL = registerBlock("cobbled_tenebralith_wall", () -> new WallBlock(TENEBRALITH_PROPERTIES));
-+    public static final DeferredHolder<?, Block> COBBLED_TENEBRALITH_BUTTON = registerBlock("cobbled_tenebralith_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).noCollission(), TENEBRALITH_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> COBBLED_TENEBRALITH_PRESSURE_PLATE = registerBlock("cobbled_tenebralith_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).noCollission(), TENEBRALITH_BLOCKSET));
++    public static final DeferredHolder<?, Block> COBBLED_TENEBRALITH_BUTTON = registerBlock("cobbled_tenebralith_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).noCollission(), TENEBRALITH_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> COBBLED_TENEBRALITH_PRESSURE_PLATE = registerBlock("cobbled_tenebralith_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.DEEPSLATE).mapColor(MapColor.COLOR_BLACK).noCollission(), TENEBRALITH_BLOCKSET));
  
  
  
@@ -6750,7 +7361,7 @@ index 0d00dbc..b5de767 100644
 -    public static final RegistryObject<Block> ROSEGOLD_PILLAR = registerBlock("rosegold_pillar", () -> new RotatedPillarBlock(ROSEGOLD_PROPERTIES));
 -    public static final RegistryObject<Block> UMBRASTONE_ROSEGOLD_ORE = registerBlock("umbrastone_rosegold_ore", () -> new Block(BlockBehaviour.Properties.copy(Blocks.GOLD_ORE).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().sound(SoundType.STONE)));
 +    public static final DeferredHolder<?, Block> ROSEGOLD_PILLAR = registerBlock("rosegold_pillar", () -> new RotatedPillarBlock(ROSEGOLD_PROPERTIES));
-+    public static final DeferredHolder<?, Block> UMBRASTONE_ROSEGOLD_ORE = registerBlock("umbrastone_rosegold_ore", () -> new Block(BlockBehaviour.Properties.copy(Blocks.GOLD_ORE).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().sound(SoundType.STONE)));
++    public static final DeferredHolder<?, Block> UMBRASTONE_ROSEGOLD_ORE = registerBlock("umbrastone_rosegold_ore", () -> new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.GOLD_ORE).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().sound(SoundType.STONE)));
  
      //Rosegold
 -    public static final RegistryObject<Block> ROSEGOLD_BLOCK = registerBlock("rosegold_block", () -> new Block(ROSEGOLD_PROPERTIES));
@@ -6763,8 +7374,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> ROSEGOLD_STAIRS = registerBlock("rosegold_stairs", () -> new StairBlock(BlockRegistry.ROSEGOLD_BLOCK.get().defaultBlockState(), ROSEGOLD_PROPERTIES));
 +    public static final DeferredHolder<?, Block> ROSEGOLD_SLAB = registerBlock("rosegold_slab", () -> new SlabBlock(ROSEGOLD_PROPERTIES));
 +    public static final DeferredHolder<?, Block> ROSEGOLD_WALL = registerBlock("rosegold_wall", () -> new WallBlock(ROSEGOLD_PROPERTIES));
-+    public static final DeferredHolder<?, Block> ROSEGOLD_BUTTON = registerBlock("rosegold_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().noCollission(), ROSEGOLD_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> ROSEGOLD_PRESSURE_PLATE = registerBlock("rosegold_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().noCollission(), ROSEGOLD_BLOCKSET));
++    public static final DeferredHolder<?, Block> ROSEGOLD_BUTTON = registerBlock("rosegold_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().noCollission(), ROSEGOLD_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> ROSEGOLD_PRESSURE_PLATE = registerBlock("rosegold_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().noCollission(), ROSEGOLD_BLOCKSET));
  
      //Rosegold bricks
 -    public static final RegistryObject<Block> ROSEGOLD_BRICKS = registerBlock("rosegold_bricks", () -> new Block(ROSEGOLD_PROPERTIES));
@@ -6777,8 +7388,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> ROSEGOLD_BRICK_STAIRS = registerBlock("rosegold_brick_stairs", () -> new StairBlock(BlockRegistry.ROSEGOLD_BRICKS.get().defaultBlockState(), ROSEGOLD_PROPERTIES));
 +    public static final DeferredHolder<?, Block> ROSEGOLD_BRICK_SLAB = registerBlock("rosegold_brick_slab", () -> new SlabBlock(ROSEGOLD_PROPERTIES));
 +    public static final DeferredHolder<?, Block> ROSEGOLD_BRICK_WALL = registerBlock("rosegold_brick_wall", () -> new WallBlock(ROSEGOLD_PROPERTIES));
-+    public static final DeferredHolder<?, Block> ROSEGOLD_BRICK_BUTTON = registerBlock("rosegold_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().noCollission(), ROSEGOLD_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> ROSEGOLD_BRICK_PRESSURE_PLATE = registerBlock("rosegold_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().noCollission(), ROSEGOLD_BLOCKSET));
++    public static final DeferredHolder<?, Block> ROSEGOLD_BRICK_BUTTON = registerBlock("rosegold_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().noCollission(), ROSEGOLD_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> ROSEGOLD_BRICK_PRESSURE_PLATE = registerBlock("rosegold_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.GOLD_BLOCK).mapColor(MapColor.COLOR_YELLOW).requiresCorrectToolForDrops().noCollission(), ROSEGOLD_BLOCKSET));
  
  
  
@@ -6794,8 +7405,8 @@ index 0d00dbc..b5de767 100644
  
 -    public static final RegistryObject<Block> DARK_MARBLE_IVORY_ORE = registerBlock("dark_marble_ivory_ore", () -> new Block(BlockBehaviour.Properties.copy(Blocks.IRON_ORE).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().sound(SoundType.STONE)));
 -    public static final RegistryObject<Block> SCARLET_MARBLE_IVORY_ORE = registerBlock("scarlet_marble_ivory_ore", () -> new Block(BlockBehaviour.Properties.copy(Blocks.IRON_ORE).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().sound(SoundType.STONE)));
-+    public static final DeferredHolder<?, Block> DARK_MARBLE_IVORY_ORE = registerBlock("dark_marble_ivory_ore", () -> new Block(BlockBehaviour.Properties.copy(Blocks.IRON_ORE).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().sound(SoundType.STONE)));
-+    public static final DeferredHolder<?, Block> SCARLET_MARBLE_IVORY_ORE = registerBlock("scarlet_marble_ivory_ore", () -> new Block(BlockBehaviour.Properties.copy(Blocks.IRON_ORE).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().sound(SoundType.STONE)));
++    public static final DeferredHolder<?, Block> DARK_MARBLE_IVORY_ORE = registerBlock("dark_marble_ivory_ore", () -> new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.IRON_ORE).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().sound(SoundType.STONE)));
++    public static final DeferredHolder<?, Block> SCARLET_MARBLE_IVORY_ORE = registerBlock("scarlet_marble_ivory_ore", () -> new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.IRON_ORE).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().sound(SoundType.STONE)));
  
 -    public static final RegistryObject<Block> IVORY_PILLAR = registerBlock("ivory_pillar", () -> new RotatedPillarBlock(IVORY_PROPERTIES));
 -    public static final RegistryObject<Block> CHISELED_IVORY = registerBlock("chiseled_ivory", () -> new Block(IVORY_PROPERTIES));
@@ -6808,8 +7419,8 @@ index 0d00dbc..b5de767 100644
 -    public static final RegistryObject<Block> SCARLET_MARBLE_DICE_GHOST = BLOCKS.register("scarlet_marble_dice_ghost", () -> new Block(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion()));
 +    public static final DeferredHolder<?, Block> DARK_MARBLE_DICE = registerBlock("dark_marble_dice", () -> new DarkMarbleDiceBlock(DARK_MARBLE_PROPERTIES));
 +    public static final DeferredHolder<?, Block> SCARLET_MARBLE_DICE = registerBlock("scarlet_marble_dice", () -> new ScarletMarbleDiceBlock(SCARLET_MARBLE_PROPERTIES));
-+    public static final DeferredHolder<?, Block> DARK_MARBLE_DICE_GHOST = BLOCKS.register("dark_marble_dice_ghost", () -> new Block(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noOcclusion()));
-+    public static final DeferredHolder<?, Block> SCARLET_MARBLE_DICE_GHOST = BLOCKS.register("scarlet_marble_dice_ghost", () -> new Block(BlockBehaviour.Properties.copy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion()));
++    public static final DeferredHolder<?, Block> DARK_MARBLE_DICE_GHOST = BLOCKS.register("dark_marble_dice_ghost", () -> new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_GRAY).requiresCorrectToolForDrops().noOcclusion()));
++    public static final DeferredHolder<?, Block> SCARLET_MARBLE_DICE_GHOST = BLOCKS.register("scarlet_marble_dice_ghost", () -> new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.CALCITE).mapColor(MapColor.COLOR_RED).requiresCorrectToolForDrops().noOcclusion()));
  
      //Ivory
 -    public static final RegistryObject<Block> IVORY_BLOCK = registerBlock("ivory_block", () -> new Block(IVORY_PROPERTIES));
@@ -6822,8 +7433,8 @@ index 0d00dbc..b5de767 100644
 +    public static final DeferredHolder<?, Block> IVORY_STAIRS = registerBlock("ivory_stairs", () -> new StairBlock(BlockRegistry.IVORY_BLOCK.get().defaultBlockState(), IVORY_PROPERTIES));
 +    public static final DeferredHolder<?, Block> IVORY_SLAB = registerBlock("ivory_slab", () -> new SlabBlock(IVORY_PROPERTIES));
 +    public static final DeferredHolder<?, Block> IVORY_WALL = registerBlock("ivory_wall", () -> new WallBlock(IVORY_PROPERTIES));
-+    public static final DeferredHolder<?, Block> IVORY_BUTTON = registerBlock("ivory_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().noCollission(), IVORY_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> IVORY_PRESSURE_PLATE = registerBlock("ivory_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().noCollission(), IVORY_BLOCKSET));
++    public static final DeferredHolder<?, Block> IVORY_BUTTON = registerBlock("ivory_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().noCollission(), IVORY_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> IVORY_PRESSURE_PLATE = registerBlock("ivory_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().noCollission(), IVORY_BLOCKSET));
  
      //Ivory bricks
 -    public static final RegistryObject<Block> IVORY_BRICKS = registerBlock("ivory_bricks", () -> new Block(IVORY_PROPERTIES));
@@ -6834,37 +7445,43 @@ index 0d00dbc..b5de767 100644
 -    public static final RegistryObject<Block> IVORY_BRICK_PRESSURE_PLATE = registerBlock("ivory_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().noCollission(), IVORY_BLOCKSET));
 -
 -    public static final RegistryObject<LiquidBlock> LUMINESCENT_WATER = BLOCKS.register("luminescent_water",
+-            () -> new LuminescentWaterFluidBlock(FluidRegistry.SOURCE_LUMINESCENT_WATER, BlockBehaviour.Properties.copy(Blocks.WATER).noLootTable()
 +    public static final DeferredHolder<?, Block> IVORY_BRICKS = registerBlock("ivory_bricks", () -> new Block(IVORY_PROPERTIES));
 +    public static final DeferredHolder<?, Block> IVORY_BRICK_STAIRS = registerBlock("ivory_brick_stairs", () -> new StairBlock(BlockRegistry.IVORY_BRICKS.get().defaultBlockState(), IVORY_PROPERTIES));
 +    public static final DeferredHolder<?, Block> IVORY_BRICK_SLAB = registerBlock("ivory_brick_slab", () -> new SlabBlock(IVORY_PROPERTIES));
 +    public static final DeferredHolder<?, Block> IVORY_BRICK_WALL = registerBlock("ivory_brick_wall", () -> new WallBlock(IVORY_PROPERTIES));
-+    public static final DeferredHolder<?, Block> IVORY_BRICK_BUTTON = registerBlock("ivory_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.copy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().noCollission(), IVORY_BLOCKSET, 30, false));
-+    public static final DeferredHolder<?, Block> IVORY_BRICK_PRESSURE_PLATE = registerBlock("ivory_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.copy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().noCollission(), IVORY_BLOCKSET));
++    public static final DeferredHolder<?, Block> IVORY_BRICK_BUTTON = registerBlock("ivory_brick_button", () -> new ButtonBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().noCollission(), IVORY_BLOCKSET, 30, false));
++    public static final DeferredHolder<?, Block> IVORY_BRICK_PRESSURE_PLATE = registerBlock("ivory_brick_pressure_plate", () -> new PressurePlateBlock(PressurePlateBlock.Sensitivity.EVERYTHING, BlockBehaviour.Properties.ofFullCopy(Blocks.BONE_BLOCK).mapColor(MapColor.TERRACOTTA_WHITE).requiresCorrectToolForDrops().noCollission(), IVORY_BLOCKSET));
 +
 +    public static final DeferredHolder<?, LiquidBlock> LUMINESCENT_WATER = BLOCKS.register("luminescent_water",
-             () -> new LuminescentWaterFluidBlock(FluidRegistry.SOURCE_LUMINESCENT_WATER, BlockBehaviour.Properties.copy(Blocks.WATER).noLootTable()
++            () -> new LuminescentWaterFluidBlock(FluidRegistry.SOURCE_LUMINESCENT_WATER, BlockBehaviour.Properties.ofFullCopy(Blocks.WATER).noLootTable()
                      .lightLevel(state -> 15).randomTicks()));
 -    public static final RegistryObject<LiquidBlock> PURE_DARKNESS = BLOCKS.register("pure_darkness",
-+    public static final DeferredHolder<?, LiquidBlock> PURE_DARKNESS = BLOCKS.register("pure_darkness",
-             () -> new LiquidBlock(FluidRegistry.SOURCE_PURE_DARKNESS, BlockBehaviour.Properties.copy(Blocks.WATER).noLootTable()));
+-            () -> new LiquidBlock(FluidRegistry.SOURCE_PURE_DARKNESS, BlockBehaviour.Properties.copy(Blocks.WATER).noLootTable()));
 -    public static final RegistryObject<LiquidBlock> NEGATIVE_PHOTONS = BLOCKS.register("negative_photons",
+-            () -> new NegativePhotonsFluidBlock(FluidRegistry.SOURCE_NEGATIVE_PHOTONS, BlockBehaviour.Properties.copy(Blocks.WATER).noLootTable()));
++    public static final DeferredHolder<?, LiquidBlock> PURE_DARKNESS = BLOCKS.register("pure_darkness",
++            () -> new LiquidBlock(FluidRegistry.SOURCE_PURE_DARKNESS, BlockBehaviour.Properties.ofFullCopy(Blocks.WATER).noLootTable()));
 +    public static final DeferredHolder<?, LiquidBlock> NEGATIVE_PHOTONS = BLOCKS.register("negative_photons",
-             () -> new NegativePhotonsFluidBlock(FluidRegistry.SOURCE_NEGATIVE_PHOTONS, BlockBehaviour.Properties.copy(Blocks.WATER).noLootTable()));
++            () -> new NegativePhotonsFluidBlock(FluidRegistry.SOURCE_NEGATIVE_PHOTONS, BlockBehaviour.Properties.ofFullCopy(Blocks.WATER).noLootTable()));
  
      //Common
 -    public static final RegistryObject<Block> GREAT_DOOR_SPAWNER = registerBlock("great_door_spawner",
 +    public static final DeferredHolder<?, Block> GREAT_DOOR_SPAWNER = registerBlock("great_door_spawner",
              () -> new GreatDoorSpawnerBlock(BlockBehaviour.Properties.of().strength(-1.0F, 3600000.0F).noLootTable().pushReaction(PushReaction.BLOCK)));
 -    public static final RegistryObject<Block> CHESHIRE_CHEST = BLOCKS.register("cheshire_chest",
-+    public static final DeferredHolder<?, Block> CHESHIRE_CHEST = BLOCKS.register("cheshire_chest",
-             () -> new CheshireChestBlock(BlockBehaviour.Properties.copy(Blocks.ENDER_CHEST).noOcclusion().sound(SoundType.COPPER).strength(5F).lightLevel(state -> 0)));
+-            () -> new CheshireChestBlock(BlockBehaviour.Properties.copy(Blocks.ENDER_CHEST).noOcclusion().sound(SoundType.COPPER).strength(5F).lightLevel(state -> 0)));
 -    public static final RegistryObject<Block> FIRE_DOOR = registerBlock("fire_door",
+-            () -> new FireDoorBlock(BlockBehaviour.Properties.copy(Blocks.IRON_DOOR).noOcclusion().sound(SoundType.COPPER).noLootTable()));
++    public static final DeferredHolder<?, Block> CHESHIRE_CHEST = BLOCKS.register("cheshire_chest",
++            () -> new CheshireChestBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.ENDER_CHEST).noOcclusion().sound(SoundType.COPPER).strength(5F).lightLevel(state -> 0)));
 +    public static final DeferredHolder<?, Block> FIRE_DOOR = registerBlock("fire_door",
-             () -> new FireDoorBlock(BlockBehaviour.Properties.copy(Blocks.IRON_DOOR).noOcclusion().sound(SoundType.COPPER).noLootTable()));
++            () -> new FireDoorBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.IRON_DOOR).noOcclusion().sound(SoundType.COPPER).noLootTable()));
  
 -    public static final RegistryObject<Block> HEARTH = registerBlock("hearth",
+-            () -> new HearthBlock(BlockBehaviour.Properties.copy(Blocks.LANTERN)
 +    public static final DeferredHolder<?, Block> HEARTH = registerBlock("hearth",
-             () -> new HearthBlock(BlockBehaviour.Properties.copy(Blocks.LANTERN)
++            () -> new HearthBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.LANTERN)
                      .mapColor(MapColor.COLOR_GRAY).sound(SoundType.LANTERN).noOcclusion().lightLevel(state -> 0)));
  
 -    public static final RegistryObject<Block> DARKNESS = BLOCKS.register("darkness",
@@ -6893,21 +7510,25 @@ index 0d00dbc..b5de767 100644
                      .sound(SoundTypeRegistry.CLIFF)));
  
 -    public static final RegistryObject<Block> VANTAROSE = registerBlock("vantarose",
+-            () -> new DepthsFlowerBlock(() -> MobEffects.DARKNESS, 20, BlockBehaviour.Properties.copy(Blocks.POPPY)
 +    public static final DeferredHolder<?, Block> VANTAROSE = registerBlock("vantarose",
-             () -> new DepthsFlowerBlock(() -> MobEffects.DARKNESS, 20, BlockBehaviour.Properties.copy(Blocks.POPPY)
++            () -> new DepthsFlowerBlock(() -> MobEffects.DARKNESS, 20, BlockBehaviour.Properties.ofFullCopy(Blocks.POPPY)
                      .mapColor(DyeColor.WHITE).sound(SoundType.SOUL_SAND).noCollission().lightLevel((state) -> 15)));
 -    public static final RegistryObject<Block> POTTED_VANTAROSE = BLOCKS.register("potted_vantarose",
 +    public static final DeferredHolder<?, Block> POTTED_VANTAROSE = BLOCKS.register("potted_vantarose",
              () -> new FlowerPotBlock(() -> ((FlowerPotBlock) Blocks.FLOWER_POT), BlockRegistry.VANTAROSE,
-                     BlockBehaviour.Properties.copy(Blocks.POTTED_POPPY).noOcclusion().lightLevel((state) -> 8)));
+-                    BlockBehaviour.Properties.copy(Blocks.POTTED_POPPY).noOcclusion().lightLevel((state) -> 8)));
++                    BlockBehaviour.Properties.ofFullCopy(Blocks.POTTED_POPPY).noOcclusion().lightLevel((state) -> 8)));
  
 -    public static final RegistryObject<Block> ROARING_EYE = registerBlock("roaring_eye",
+-            () -> new RoaringEyeBlock(BlockBehaviour.Properties.copy(Blocks.POPPY).offsetType(BlockBehaviour.OffsetType.NONE)
 +    public static final DeferredHolder<?, Block> ROARING_EYE = registerBlock("roaring_eye",
-             () -> new RoaringEyeBlock(BlockBehaviour.Properties.copy(Blocks.POPPY).offsetType(BlockBehaviour.OffsetType.NONE)
++            () -> new RoaringEyeBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.POPPY).offsetType(BlockBehaviour.OffsetType.NONE)
                      .mapColor(DyeColor.WHITE).sound(SoundType.SOUL_SAND).noCollission()));
 -    public static final RegistryObject<Block> ROARING_EYE_GHOST = BLOCKS.register("roaring_eye_ghost",
+-            () -> new Block(BlockBehaviour.Properties.copy(Blocks.POPPY).offsetType(BlockBehaviour.OffsetType.NONE)
 +    public static final DeferredHolder<?, Block> ROARING_EYE_GHOST = BLOCKS.register("roaring_eye_ghost",
-             () -> new Block(BlockBehaviour.Properties.copy(Blocks.POPPY).offsetType(BlockBehaviour.OffsetType.NONE)
++            () -> new Block(BlockBehaviour.Properties.ofFullCopy(Blocks.POPPY).offsetType(BlockBehaviour.OffsetType.NONE)
                      .mapColor(DyeColor.WHITE).sound(SoundType.SOUL_SAND).noCollission()));
  
 -    public static <T extends Block> RegistryObject<T> registerBlock(String name, Supplier<T> block) {
@@ -7351,7 +7972,7 @@ index 43cf172..9f65eb9 100644
      }
  
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/registry/ItemRegistry.java b/src/main/java/destiny/penumbra_phantasm/server/registry/ItemRegistry.java
-index a5cb7f1..17e4f4c 100644
+index a5cb7f1..62b197d 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/registry/ItemRegistry.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/registry/ItemRegistry.java
 @@ -6,186 +6,186 @@ import net.minecraft.core.Direction;
@@ -7492,8 +8113,9 @@ index a5cb7f1..17e4f4c 100644
              () -> new FractalMirrorItem(basicItem()));
  
 -    public static final RegistryObject<Item> ITEM_MUSIC_MEDIUM_THE_HOLY = ITEMS.register("item_music_medium_the_holy",
+-            () -> new MusicMediumItem(6, SoundRegistry.FOUNTAIN_MUSIC_DISC, basicItem(), (int) (53.333 * 20)));
 +    public static final DeferredHolder<?, Item> ITEM_MUSIC_MEDIUM_THE_HOLY = ITEMS.register("item_music_medium_the_holy",
-             () -> new MusicMediumItem(6, SoundRegistry.FOUNTAIN_MUSIC_DISC, basicItem(), (int) (53.333 * 20)));
++            () -> new MusicMediumItem(basicItem().rarity(net.minecraft.world.item.Rarity.RARE).component(net.minecraft.core.component.DataComponents.JUKEBOX_PLAYABLE, new net.minecraft.world.item.JukeboxPlayable(new net.minecraft.world.item.EitherHolder<>(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.JUKEBOX_SONG, net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(destiny.penumbra_phantasm.PenumbraPhantasm.MODID, "the_holy"))), true))));
  
 -    public static final RegistryObject<Item> DARK_CANDY_STICK = ITEMS.register("dark_candy_stick",
 +    public static final DeferredHolder<?, Item> DARK_CANDY_STICK = ITEMS.register("dark_candy_stick",
@@ -7903,10 +8525,10 @@ index 0351406..ed7877f 100644
              () -> SoundEvents.SOUL_SAND_STEP,
              () -> SoundEvents.SOUL_SAND_PLACE,
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/transformations/inventory/StorageManager.java b/src/main/java/destiny/penumbra_phantasm/server/transformations/inventory/StorageManager.java
-index 5c553fb..9e6cc90 100644
+index 5c553fb..36b5f76 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/transformations/inventory/StorageManager.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/transformations/inventory/StorageManager.java
-@@ -4,9 +4,9 @@ import destiny.penumbra_phantasm.server.compatability.curios.CuriosCompat;
+@@ -4,9 +4,8 @@ import destiny.penumbra_phantasm.server.compatability.curios.CuriosCompat;
  import destiny.penumbra_phantasm.server.event.custom.RegisterStorageHandlersEvent;
  import destiny.penumbra_phantasm.server.transformations.inventory.handlers.IStorageHandler;
  import destiny.penumbra_phantasm.server.transformations.inventory.handlers.VanillaInventoryHandler;
@@ -7915,21 +8537,37 @@ index 5c553fb..9e6cc90 100644
 -import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 +import net.neoforged.bus.api.IEventBus;
 +import net.neoforged.fml.ModList;
-+import net.neoforged.fml.javafmlmod.FMLJavaModLoadingContext;
  
  import java.util.ArrayList;
  import java.util.List;
+@@ -15,13 +14,12 @@ public class StorageManager
+ {
+ 	private static final List<IStorageHandler> HANDLERS = new ArrayList<>();
+ 
+-	public static void init()
++	public static void init(IEventBus bus)
+ 	{
+ 		HANDLERS.add(new VanillaInventoryHandler());
+ 		if(ModList.get().isLoaded("curios"))
+ 			HANDLERS.add(CuriosCompat.createCuriosHandler());
+ 
+-		IEventBus bus = FMLJavaModLoadingContext.get().getModEventBus();
+ 		bus.post(new RegisterStorageHandlersEvent(HANDLERS));
+ 	}
+ 
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/util/DarkWorldUtil.java b/src/main/java/destiny/penumbra_phantasm/server/util/DarkWorldUtil.java
-index c3e21ac..c61c77a 100644
+index c3e21ac..a1b0fb2 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/util/DarkWorldUtil.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/util/DarkWorldUtil.java
-@@ -1,5 +1,6 @@
+@@ -1,6 +1,7 @@
  package destiny.penumbra_phantasm.server.util;
  
+-import commoble.infiniverse.api.InfiniverseAPI;
 +import destiny.penumbra_phantasm.compat.legacy.LegacyCaps;
- import commoble.infiniverse.api.InfiniverseAPI;
++import destiny.penumbra_phantasm.compat.InfiniverseCompat;
  import destiny.penumbra_phantasm.PenumbraPhantasm;
  import destiny.penumbra_phantasm.ServerConfig;
+ import destiny.penumbra_phantasm.server.block.entity.GreatDoorShapeBlockEntity;
 @@ -47,7 +48,7 @@ import net.minecraft.world.level.levelgen.flat.FlatLevelGeneratorSettings;
  import net.minecraft.world.level.levelgen.structure.BoundingBox;
  import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
@@ -8058,6 +8696,15 @@ index c3e21ac..c61c77a 100644
  
  		ServerLevel existingLevel = server.getLevel(key);
  		if (existingLevel != null) return existingLevel;
+@@ -663,7 +663,7 @@ public class DarkWorldUtil {
+ 
+ 		LevelStem stem = new LevelStem(getDimensionType(server, type.dimensionType()), chunkGenerator);
+ 
+-		return InfiniverseAPI.get().getOrCreateLevel(server, key, () -> stem);
++		return InfiniverseCompat.getOrCreateLevel(server, key, () -> stem);
+ 	}
+ 
+ 	private static long createUniqueDarkWorldSeed(MinecraftServer server, ResourceKey<Level> levelKey) {
 @@ -728,7 +728,7 @@ public class DarkWorldUtil {
  
  	@Nullable
@@ -8068,10 +8715,18 @@ index c3e21ac..c61c77a 100644
  		return server.getLevel(depthsKey);
  	}
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/util/ModUtil.java b/src/main/java/destiny/penumbra_phantasm/server/util/ModUtil.java
-index 9375db8..213ae51 100644
+index 9375db8..3645bbe 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/util/ModUtil.java
 +++ b/src/main/java/destiny/penumbra_phantasm/server/util/ModUtil.java
-@@ -39,7 +39,7 @@ public class ModUtil {
+@@ -32,14 +32,14 @@ public class ModUtil {
+     }
+ 
+     public static Entity teleportEntity(Entity entity, ServerLevel destinationLevel, Vec3 targetPos) {
+-        return entity.changeDimension(destinationLevel, new DarkFountain.DarkFountainTeleporter(targetPos, entity.getDeltaMovement(), entity.getYRot(), entity.getXRot()));
++        return entity.changeDimension(new DarkFountain.DarkFountainTeleporter(targetPos, entity.getDeltaMovement(), entity.getYRot(), entity.getXRot()).toTransition(destinationLevel));
+     }
+ 
+     public static ResourceKey<Level> stringToDimension(String dimensionString) {
          String[] split = dimensionString.split(":");
  
          if (split.length > 1)
@@ -8080,6 +8735,74 @@ index 9375db8..213ae51 100644
  
          return null;
      }
+diff --git a/src/main/java/destiny/penumbra_phantasm/server/worldgen/DarkCandyGrower.java b/src/main/java/destiny/penumbra_phantasm/server/worldgen/DarkCandyGrower.java
+index 5988ef1..7f3ec4b 100644
+--- a/src/main/java/destiny/penumbra_phantasm/server/worldgen/DarkCandyGrower.java
++++ b/src/main/java/destiny/penumbra_phantasm/server/worldgen/DarkCandyGrower.java
+@@ -1,24 +1,11 @@
+ package destiny.penumbra_phantasm.server.worldgen;
+ 
++import destiny.penumbra_phantasm.PenumbraPhantasm;
+ import destiny.penumbra_phantasm.server.registry.FeatureRegistry;
+-import net.minecraft.core.BlockPos;
+-import net.minecraft.resources.ResourceKey;
+-import net.minecraft.server.level.ServerLevel;
+-import net.minecraft.util.RandomSource;
+-import net.minecraft.world.level.block.grower.AbstractTreeGrower;
+-import net.minecraft.world.level.block.state.BlockState;
+-import net.minecraft.world.level.chunk.ChunkGenerator;
+-import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
+-import org.jetbrains.annotations.Nullable;
++import net.minecraft.world.level.block.grower.TreeGrower;
+ 
+-public class DarkCandyGrower extends AbstractTreeGrower {
+-    @Override
+-    protected @Nullable ResourceKey<ConfiguredFeature<?, ?>> getConfiguredFeature(RandomSource randomSource, boolean b) {
+-        return FeatureRegistry.DARK_CANDY_TREE_GROWN;
+-    }
++import java.util.Optional;
+ 
+-    @Override
+-    public boolean growTree(ServerLevel pLevel, ChunkGenerator pGenerator, BlockPos pPos, BlockState pState, RandomSource pRandom) {
+-        return super.growTree(pLevel, pGenerator, pPos, pState, pRandom);
+-    }
++public class DarkCandyGrower {
++    public static final TreeGrower GROWER = new TreeGrower(PenumbraPhantasm.MODID + ":dark_candy", Optional.empty(), Optional.of(FeatureRegistry.DARK_CANDY_TREE_GROWN), Optional.empty());
+ }
+diff --git a/src/main/java/destiny/penumbra_phantasm/server/worldgen/ScarletGrower.java b/src/main/java/destiny/penumbra_phantasm/server/worldgen/ScarletGrower.java
+index 075657a..86dee90 100644
+--- a/src/main/java/destiny/penumbra_phantasm/server/worldgen/ScarletGrower.java
++++ b/src/main/java/destiny/penumbra_phantasm/server/worldgen/ScarletGrower.java
+@@ -1,24 +1,11 @@
+ package destiny.penumbra_phantasm.server.worldgen;
+ 
++import destiny.penumbra_phantasm.PenumbraPhantasm;
+ import destiny.penumbra_phantasm.server.registry.FeatureRegistry;
+-import net.minecraft.core.BlockPos;
+-import net.minecraft.resources.ResourceKey;
+-import net.minecraft.server.level.ServerLevel;
+-import net.minecraft.util.RandomSource;
+-import net.minecraft.world.level.block.grower.AbstractTreeGrower;
+-import net.minecraft.world.level.block.state.BlockState;
+-import net.minecraft.world.level.chunk.ChunkGenerator;
+-import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
+-import org.jetbrains.annotations.Nullable;
++import net.minecraft.world.level.block.grower.TreeGrower;
+ 
+-public class ScarletGrower extends AbstractTreeGrower {
+-    @Override
+-    protected @Nullable ResourceKey<ConfiguredFeature<?, ?>> getConfiguredFeature(RandomSource randomSource, boolean b) {
+-        return FeatureRegistry.SCARLET_TREE_GROWN;
+-    }
++import java.util.Optional;
+ 
+-    @Override
+-    public boolean growTree(ServerLevel pLevel, ChunkGenerator pGenerator, BlockPos pPos, BlockState pState, RandomSource pRandom) {
+-        return super.growTree(pLevel, pGenerator, pPos, pState, pRandom);
+-    }
++public class ScarletGrower {
++    public static final TreeGrower GROWER = new TreeGrower(PenumbraPhantasm.MODID + ":scarlet", Optional.empty(), Optional.of(FeatureRegistry.SCARLET_TREE_GROWN), Optional.empty());
+ }
 diff --git a/src/main/java/destiny/penumbra_phantasm/server/worldgen/SeededNoiseBasedChunkGenerator.java b/src/main/java/destiny/penumbra_phantasm/server/worldgen/SeededNoiseBasedChunkGenerator.java
 index cf93a82..7861338 100644
 --- a/src/main/java/destiny/penumbra_phantasm/server/worldgen/SeededNoiseBasedChunkGenerator.java
@@ -8948,6 +9671,20 @@ index 1b2caed..f688e8b 100644
    "sends_telemetry_event": false
 -}
 \ No newline at end of file
++}
+diff --git a/src/main/resources/data/penumbra_phantasm/jukebox_song/the_holy.json b/src/main/resources/data/penumbra_phantasm/jukebox_song/the_holy.json
+new file mode 100644
+index 0000000..f93f4ab
+--- /dev/null
++++ b/src/main/resources/data/penumbra_phantasm/jukebox_song/the_holy.json
+@@ -0,0 +1,8 @@
++{
++  "comparator_output": 6,
++  "description": {
++    "translate": "item.penumbra_phantasm.item_music_medium_the_holy.desc"
++  },
++  "length_in_seconds": 53.333,
++  "sound_event": "penumbra_phantasm:fountain_music_disc"
 +}
 diff --git a/src/main/resources/data/penumbra_phantasm/loot_tables/blocks/black_check.json b/src/main/resources/data/penumbra_phantasm/loot_table/blocks/black_check.json
 similarity index 100%
