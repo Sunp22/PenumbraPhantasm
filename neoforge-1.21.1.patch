@@ -641,7 +641,7 @@ index 485c386..4b06a92 100644
  
          modEventBus.addListener((DataPackRegistryEvent.NewRegistry event) -> {
              event.dataPackRegistry(DarkWorldType.REGISTRY_KEY, DarkWorldType.CODEC, null);
-@@ -94,12 +95,12 @@ public class PenumbraPhantasm {
+@@ -94,12 +95,10 @@ public class PenumbraPhantasm {
              event.dataPackRegistry(DarkWorldRecipeSeparation.REGISTRY_KEY, DarkWorldRecipeSeparation.CODEC, DarkWorldRecipeSeparation.CODEC);
              event.dataPackRegistry(BiomeMusicType.REGISTRY_KEY, BiomeMusicType.CODEC, BiomeMusicType.CODEC);
          });
@@ -650,15 +650,14 @@ index 485c386..4b06a92 100644
  
 -        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, ServerConfig.SPEC);
 -        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
+-
+-        MinecraftForge.EVENT_BUS.register(this);
 +        modContainer.registerConfig(ModConfig.Type.COMMON, ServerConfig.SPEC);
 +        modContainer.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
  
--        MinecraftForge.EVENT_BUS.register(this);
-+        NeoForge.EVENT_BUS.register(this);
- 
          ModList.get().getModContainerById("fusion").ifPresent(container -> {
                      try {
-@@ -111,12 +112,8 @@ public class PenumbraPhantasm {
+@@ -111,12 +110,8 @@ public class PenumbraPhantasm {
          );
      }
  
@@ -672,7 +671,7 @@ index 485c386..4b06a92 100644
      public static class ClientModEvents {
          @SubscribeEvent
          public static void onItemColors(RegisterColorHandlersEvent.Item event) {
-@@ -151,13 +148,13 @@ public class PenumbraPhantasm {
+@@ -151,13 +146,13 @@ public class PenumbraPhantasm {
          }
  
          @SubscribeEvent
@@ -693,7 +692,7 @@ index 485c386..4b06a92 100644
          }
  
          @SubscribeEvent
-@@ -189,21 +186,24 @@ public class PenumbraPhantasm {
+@@ -189,21 +184,24 @@ public class PenumbraPhantasm {
  
                  EntityRenderers.register(EntityRegistry.SEALING_SOUL.get(), SealingSoulEntityRenderer::new);
  
