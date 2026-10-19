@@ -75,6 +75,81 @@ jobs:
           set -o pipefail
           ./gradlew build --no-daemon --stacktrace 2>&1 | tee build.log
 
+      - name: Dump dependency API (class lists and signatures)
+        if: always()
+        run: |
+          mkdir -p api-dump
+          find "$HOME/.gradle" "$PWD/.gradle" build -name '*.jar' ! -name '*-sources.jar' 2>/dev/null > api-dump/jars.txt || true
+          CP=$(paste -sd: api-dump/jars.txt)
+          for key in ha1mEyJS geckolib curios; do
+            for j in $(grep -i "$key" api-dump/jars.txt); do
+              echo "## $j"
+              unzip -Z1 "$j" 2>/dev/null | grep '\.class$' | sed 's/\.class$//; s|/|.|g'
+            done > "api-dump/classes-$key.txt"
+          done
+          for c in \
+            net.minecraft.client.gui.screens.Screen \
+            net.minecraft.client.gui.screens.inventory.AbstractContainerScreen \
+            net.minecraft.client.gui.screens.inventory.CraftingScreen \
+            net.minecraft.client.gui.screens.recipebook.RecipeBookComponent \
+            net.minecraft.client.gui.screens.recipebook.RecipeCollection \
+            net.minecraft.client.gui.screens.recipebook.RecipeBookTabButton \
+            net.minecraft.client.gui.screens.recipebook.RecipeButton \
+            net.minecraft.client.gui.screens.recipebook.RecipeBookPage \
+            net.minecraft.client.gui.screens.recipebook.OverlayRecipeComponent \
+            net.minecraft.client.gui.screens.recipebook.AbstractFurnaceRecipeBookComponent \
+            net.minecraft.client.gui.screens.inventory.AbstractFurnaceScreen \
+            net.minecraft.client.gui.screens.inventory.InventoryScreen \
+            net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen \
+            net.minecraft.client.gui.screens.PauseScreen \
+            net.minecraft.client.gui.screens.OptionsScreen \
+            net.minecraft.client.gui.screens.OptionsSubScreen \
+            net.minecraft.client.gui.screens.ShareToLanScreen \
+            net.minecraft.client.gui.components.StateSwitchingButton \
+            net.minecraft.client.gui.components.ImageButton \
+            net.minecraft.client.gui.components.CycleButton \
+            net.minecraft.client.gui.components.AbstractWidget \
+            net.minecraft.client.gui.components.Button \
+            net.minecraft.client.gui.GuiGraphics \
+            net.minecraft.client.gui.Gui \
+            net.minecraft.world.inventory.AbstractContainerMenu \
+            net.minecraft.world.inventory.InventoryMenu \
+            net.minecraft.world.inventory.RecipeBookMenu \
+            net.minecraft.world.inventory.CraftingMenu \
+            net.minecraft.world.inventory.AbstractFurnaceMenu \
+            net.minecraft.world.inventory.ResultSlot \
+            net.minecraft.world.item.crafting.RecipeManager \
+            net.minecraft.world.item.crafting.RecipeHolder \
+            net.minecraft.world.item.crafting.CraftingInput \
+            net.minecraft.world.item.crafting.CraftingRecipe \
+            net.minecraft.client.ClientRecipeBook \
+            net.minecraft.stats.RecipeBook \
+            net.minecraft.client.gui.screens.inventory.tooltip.TooltipRenderUtil \
+            net.minecraft.world.entity.player.Player \
+            net.minecraft.client.player.LocalPlayer \
+            net.minecraft.client.gui.screens.recipebook.GhostRecipe \
+            net.minecraft.client.gui.screens.recipebook.RecipeUpdateListener \
+            net.minecraft.recipebook.PlaceRecipe \
+            net.minecraft.world.entity.player.StackedContents \
+            net.minecraft.client.gui.components.Renderable \
+            net.minecraft.client.gui.components.EditBox \
+            net.minecraft.client.gui.screens.inventory.EffectRenderingInventoryScreen \
+            software.bernie.geckolib.renderer.GeoItemRenderer \
+            com.zigythebird.playeranim.api.PlayerAnimationFactory \
+            com.zigythebird.playeranim.api.PlayerAnimationAccess \
+            com.zigythebird.playeranim.animation.PlayerAnimationController \
+            ; do
+            javap -protected -cp "$CP" "$c" > "api-dump/$c.txt" 2>&1 || true
+          done
+
+      - name: Upload API dump
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-dump
+          path: api-dump
+          if-no-files-found: ignore
+
       - name: Summarise compile errors
         if: always()
         run: |
