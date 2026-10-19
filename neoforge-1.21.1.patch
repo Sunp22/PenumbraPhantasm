@@ -1142,7 +1142,7 @@ index 196bb4e..de04540 100644
  import java.util.function.Supplier;
  
 diff --git a/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundPacketHandler.java b/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundPacketHandler.java
-index 2cc02e4..a7d4b5b 100644
+index 2cc02e4..73afc66 100644
 --- a/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundPacketHandler.java
 +++ b/src/main/java/destiny/penumbra_phantasm/client/network/ClientBoundPacketHandler.java
 @@ -1,5 +1,6 @@
@@ -1152,7 +1152,15 @@ index 2cc02e4..a7d4b5b 100644
  import destiny.penumbra_phantasm.client.render.screen.DEVICE_INTRO_SCREEN;
  import destiny.penumbra_phantasm.client.render.textbox.DarkWorldDialogue;
  import destiny.penumbra_phantasm.client.render.textbox.TextBoxConstants;
-@@ -38,8 +39,8 @@ import net.minecraft.world.entity.Entity;
+@@ -19,7 +20,6 @@ import destiny.penumbra_phantasm.server.registry.PacketHandlerRegistry;
+ import destiny.penumbra_phantasm.server.registry.SoundRegistry;
+ import destiny.penumbra_phantasm.server.util.DarkWorldUtil;
+ import dev.kosmx.playerAnim.api.layered.IAnimation;
+-import dev.kosmx.playerAnim.api.layered.KeyframeAnimationPlayer;
+ import dev.kosmx.playerAnim.api.layered.ModifierLayer;
+ import dev.kosmx.playerAnim.minecraftApi.PlayerAnimationAccess;
+ import dev.kosmx.playerAnim.minecraftApi.PlayerAnimationRegistry;
+@@ -38,8 +38,8 @@ import net.minecraft.world.entity.Entity;
  import net.minecraft.world.entity.player.Player;
  import net.minecraft.world.level.Level;
  import net.minecraft.world.phys.Vec3;
@@ -1163,7 +1171,7 @@ index 2cc02e4..a7d4b5b 100644
  
  import java.util.List;
  import java.util.Map;
-@@ -82,7 +83,7 @@ public class ClientBoundPacketHandler
+@@ -82,7 +82,7 @@ public class ClientBoundPacketHandler
  		Player player = minecraft.player;
  
  		if(player != null)
@@ -1172,7 +1180,7 @@ index 2cc02e4..a7d4b5b 100644
  				{
  					cap.diedWithSoulHearth = diedWithSoulHearth;
  					cap.soulType = soulType;
-@@ -94,7 +95,7 @@ public class ClientBoundPacketHandler
+@@ -94,7 +94,7 @@ public class ClientBoundPacketHandler
  		Player player = minecraft.player;
  
  		if(player != null) {
@@ -1181,7 +1189,7 @@ index 2cc02e4..a7d4b5b 100644
  				cap.seenIntro = seenIntro;
  				cap.diedWithSoulHearth = diedWithSoulHearth;
  				cap.soulType = soulType;
-@@ -218,7 +219,7 @@ public class ClientBoundPacketHandler
+@@ -218,7 +218,7 @@ public class ClientBoundPacketHandler
  		Level level = player.level();
  
  		SoulCapability soulCapability = null;
@@ -1190,7 +1198,7 @@ index 2cc02e4..a7d4b5b 100644
  		if(soulCapabilityLazy.isPresent() && soulCapabilityLazy.resolve().isPresent())
  			soulCapability = soulCapabilityLazy.resolve().get();
  
-@@ -227,7 +228,7 @@ public class ClientBoundPacketHandler
+@@ -227,7 +227,7 @@ public class ClientBoundPacketHandler
  		}
  
  		DarkFountainCapability darkFountainCapability = null;
@@ -1199,7 +1207,7 @@ index 2cc02e4..a7d4b5b 100644
  		if(darkLazyCapability.isPresent() && darkLazyCapability.resolve().isPresent())
  			darkFountainCapability = darkLazyCapability.resolve().get();
  
-@@ -272,7 +273,7 @@ public class ClientBoundPacketHandler
+@@ -272,7 +272,7 @@ public class ClientBoundPacketHandler
  
  		if (level == null) return;
  
@@ -1208,14 +1216,14 @@ index 2cc02e4..a7d4b5b 100644
  
  		if (!(type instanceof SimpleParticleType simpleType)) return;
  
-@@ -294,7 +295,10 @@ public class ClientBoundPacketHandler
+@@ -294,7 +294,10 @@ public class ClientBoundPacketHandler
  				.get(animationId);
  
  		if (animation != null) {
 -			animation.setAnimation(new KeyframeAnimationPlayer(PlayerAnimationRegistry.getAnimation(animationId)));
 +			var anim = PlayerAnimationRegistry.getAnimation(animationId);
 +			if (anim != null) {
-+				animation.setAnimation(new KeyframeAnimationPlayer(anim));
++				animation.setAnimation(anim.playAnimation());
 +			}
  		}
  	}
