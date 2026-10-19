@@ -6298,7 +6298,15 @@ index 1ded11f..d5228bd 100644
  import com.mojang.blaze3d.platform.Window;
  import com.mojang.blaze3d.systems.RenderSystem;
  import com.mojang.blaze3d.vertex.*;
-@@ -32,7 +33,7 @@ import net.minecraft.client.renderer.ShaderInstance;
+@@ -22,6 +23,7 @@ import destiny.penumbra_phantasm.server.registry.FluidTypeRegistry;
+ import destiny.penumbra_phantasm.server.util.DarkWorldUtil;
+ import net.minecraft.Util;
+ import net.minecraft.client.Camera;
++import net.minecraft.client.DeltaTracker;
+ import net.minecraft.client.Minecraft;
+ import net.minecraft.client.gui.Font;
+ import net.minecraft.client.gui.GuiGraphics;
+@@ -32,7 +34,7 @@ import net.minecraft.client.renderer.ShaderInstance;
  import net.minecraft.resources.ResourceLocation;
  import net.minecraft.util.FastColor;
  import net.minecraft.util.Mth;
@@ -6307,7 +6315,26 @@ index 1ded11f..d5228bd 100644
  import org.joml.Matrix4f;
  import org.spongepowered.asm.mixin.Mixin;
  import org.spongepowered.asm.mixin.Unique;
-@@ -92,7 +93,7 @@ public abstract class GameRendererMixin {
+@@ -50,7 +52,7 @@ public abstract class GameRendererMixin {
+ 	private static final ResourceLocation SWOON = ResourceLocation.tryBuild(PenumbraPhantasm.MODID, "textures/misc/swoon.png");
+ 
+ 	@Inject(method = "renderItemInHand", at = @At("HEAD"), cancellable = true)
+-	private void penumbraPhantasm$hideEggRoomHands(PoseStack poseStack, Camera camera, float partialTick, CallbackInfo ci) {
++	private void penumbraPhantasm$hideEggRoomHands(Camera camera, float partialTick, Matrix4f projectionMatrix, CallbackInfo ci) {
+ 		if (Minecraft.getInstance().level != null && CardKingdomEggRoomUtil.isEggRoom(Minecraft.getInstance().level)) {
+ 			ci.cancel();
+ 		}
+@@ -71,7 +73,8 @@ public abstract class GameRendererMixin {
+ 	}
+ 
+ 	@Inject(method = "render", at = @At("TAIL"))
+-	private void renderDarknessOverlays(float partialTick, long nanoTime, boolean renderLevel, CallbackInfo ci) {
++	private void renderDarknessOverlays(DeltaTracker deltaTracker, boolean renderLevel, CallbackInfo ci) {
++		float partialTick = deltaTracker.getGameTimeDeltaPartialTick(false);
+ 		Minecraft minecraft = Minecraft.getInstance();
+ 
+ 		if (minecraft.isPaused()) return;
+@@ -92,7 +95,7 @@ public abstract class GameRendererMixin {
  			FountainHueShiftRenderer.render(minecraft, (GameRenderer) (Object) this, partialTick);
  		}
  
@@ -6316,7 +6343,7 @@ index 1ded11f..d5228bd 100644
  		if (screenCap == null) return;
  
  		int darknessLandTicker = screenCap.darknessLandTicker;
-@@ -109,7 +110,7 @@ public abstract class GameRendererMixin {
+@@ -109,7 +112,7 @@ public abstract class GameRendererMixin {
  			transitionAlpha = Math.min(Mth.lerp(darknessOverlayTicker / 100f, 0f, 3f), 2.5f);
  		}
  
@@ -6325,7 +6352,7 @@ index 1ded11f..d5228bd 100644
  		if (soulCap == null) return;
  
  		int determination = soulCap.determination;
-@@ -132,14 +133,14 @@ public abstract class GameRendererMixin {
+@@ -132,14 +135,14 @@ public abstract class GameRendererMixin {
  		RenderSystem.disableDepthTest();
  
  		Window window = minecraft.getWindow();
@@ -6344,7 +6371,7 @@ index 1ded11f..d5228bd 100644
  		modelViewStack.translate(0, 0, 1000 - guiFarPlane);
  		RenderSystem.applyModelViewMatrix();
  
-@@ -165,7 +166,7 @@ public abstract class GameRendererMixin {
+@@ -165,7 +168,7 @@ public abstract class GameRendererMixin {
  
  		RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
  		RenderSystem.disableBlend();
@@ -6353,7 +6380,7 @@ index 1ded11f..d5228bd 100644
  		RenderSystem.applyModelViewMatrix();
  		RenderSystem.enableDepthTest();
  	}
-@@ -298,15 +299,14 @@ public abstract class GameRendererMixin {
+@@ -298,15 +301,14 @@ public abstract class GameRendererMixin {
  		PoseStack pose = new PoseStack();
  		Matrix4f matrix = pose.last().pose();
  
